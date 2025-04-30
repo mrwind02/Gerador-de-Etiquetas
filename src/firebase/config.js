@@ -24,4 +24,20 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
+// Função para validar e normalizar os dados importados
+export const normalizeProductData = (product) => {
+  return {
+    ...product,
+    id: product.id || null, // Garantir que o produto tenha um campo 'id' (pode ser nulo inicialmente)
+    sku: typeof product.Cod === 'string' && product.Cod.trim() ? Number(product.Cod.trim()) :
+         typeof product.Código === 'string' && product.Código.trim() ? Number(product.Código.trim()) :
+         typeof product.sku === 'string' ? Number(product.sku.trim()) :
+         typeof product.sku === 'number' ? product.sku : null, // Garantir que o SKU seja convertido para número
+    nome: typeof product.Descrição === 'string' && product.Descrição.trim() ? product.Descrição.trim() :
+          typeof product.Nome === 'string' && product.Nome.trim() ? product.Nome.trim() :
+          typeof product.nome === 'string' ? product.nome.trim() : 'Produto sem nome', // Garantir que o nome seja extraído corretamente
+    uf: product.UF?.trim() || product.Estado?.trim() || 'UF', // Garantir que UF seja extraído corretamente
+  };
+};
+
 export { db };

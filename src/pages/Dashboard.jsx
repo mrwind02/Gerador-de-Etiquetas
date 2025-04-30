@@ -39,7 +39,7 @@ const features = [
 
 export default function Dashboard() {
   return (
-    <div className="bg-white py-6">
+    <div className="bg-white py-2">
       <div className="mx-auto max-w-7xl">
         <div className="text-center">
           <h2 className="text-3xl font-bold tracking-tight text-gray-900 sm:text-4xl">Gerador de Etiquetas</h2>
@@ -54,14 +54,16 @@ export default function Dashboard() {
               <Link
                 key={feature.name}
                 to={feature.href}
-                className="group relative block overflow-hidden rounded-lg border border-gray-200 p-6 hover:border-indigo-600 hover:ring-1 hover:ring-indigo-600 transition-all duration-300"
+                className="group relative block overflow-hidden rounded-lg border border-gray-200 p-4 pb-12 hover:border-indigo-600 hover:ring-1 hover:ring-indigo-600 transition-all duration-300"
               >
-                <div className={`absolute right-4 top-4 rounded-full ${feature.color} p-3`}>
-                  <feature.icon className="h-6 w-6 text-white" aria-hidden="true" />
+                <div className="flex items-center gap-3">
+                  <div className={`rounded-full ${feature.color} p-2`}>
+                    <feature.icon className="h-4 w-4 text-white" aria-hidden="true" />
+                  </div>
+                  <h3 className="text-sm font-semibold text-gray-900">{feature.name}</h3>
                 </div>
-                <h3 className="text-lg font-semibold leading-8 tracking-tight text-gray-900">{feature.name}</h3>
-                <p className="mt-2 text-base leading-7 text-gray-600">{feature.description}</p>
-                <span className="absolute bottom-4 text-sm font-medium text-indigo-600 group-hover:underline">
+                <p className="mt-3 text-sm leading-6 text-gray-600">{feature.description}</p>
+                <span className="absolute bottom-3 text-sm font-medium text-indigo-600 group-hover:underline">
                   Acessar
                 </span>
               </Link>

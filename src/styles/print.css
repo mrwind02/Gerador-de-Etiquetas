@@ -1,0 +1,45 @@
+@media print {
+  @page {
+    margin: 10mm;
+    size: auto;
+  }
+
+  body * {
+    visibility: hidden;
+  }
+
+  .print-area,
+  .print-area * {
+    visibility: visible !important;
+  }
+
+  .print-area {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+  }
+
+  .etiquetas-container {
+    display: flex !important;
+    flex-wrap: wrap !important;
+    gap: 2mm !important;
+  }
+
+  .etiqueta {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+
+  .etiquetas-grid {
+    display: grid !important;
+    grid-gap: 5mm;
+    grid-template-columns: repeat(auto-fill, minmax(auto, 1fr));
+    padding: 10mm;
+  }
+
+  .print-info {
+    text-align: center;
+    margin-bottom: 10mm;
+  }
+}

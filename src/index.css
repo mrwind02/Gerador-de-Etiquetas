@@ -15,3 +15,17 @@ code {
   font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
     monospace;
 }
+
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  #previewRef, #previewRef * {
+    visibility: visible;
+  }
+  #previewRef {
+    position: absolute;
+    left: 0;
+    top: 0;
+  }
+}
