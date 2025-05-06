@@ -16,6 +16,42 @@ export default function Produtos({ db }) {
     sku: ''
   });
 
+  // Função para calcular automaticamente a quantidade de etiquetas com base no tipo de produto
+  const calcularQuantidadeEtiquetas = (produto, tiposProdutos) => {
+    const tipoProduto = tiposProdutos.find((tipo) => {
+      const palavrasChave = tipo.nome.toLowerCase().split(' '); // Dividir o nome do tipo em palavras-chave
+      return palavrasChave.every((palavra) => produto.nome.toLowerCase().includes(palavra)); // Verificar se todas as palavras-chave estão no nome do produto
+    });
+
+    return tipoProduto ? tipoProduto.quantidade : 1; // Retornar a quantidade do tipo ou 1 como padrão
+  };
+
+  // Função para gerar etiquetas com base nos produtos selecionados
+  const gerarEtiquetas = (produtosSelecionados, tiposProdutos) => {
+    const etiquetas = [];
+
+    produtosSelecionados.forEach((produto) => {
+      const quantidadeEtiquetas = calcularQuantidadeEtiquetas(produto, tiposProdutos);
+
+      for (let i = 0; i < quantidadeEtiquetas; i++) {
+        etiquetas.push({
+          id: `${produto.id}-${i + 1}`,
+          produto,
+          numeroEtiqueta: i + 1,
+        });
+      }
+    });
+
+    return etiquetas;
+  };
+
+  // Exemplo de uso ao salvar ou processar produtos
+  const handleGerarEtiquetas = () => {
+    const etiquetasGeradas = gerarEtiquetas(produtos, tiposProdutos); // `tiposProdutos` deve ser carregado do banco
+    console.log('Etiquetas Geradas:', etiquetasGeradas);
+    alert(`Foram geradas ${etiquetasGeradas.length} etiquetas.`);
+  };
+
   // Carregar produtos do Firestore
   useEffect(() => {
     const fetchProdutos = async () => {

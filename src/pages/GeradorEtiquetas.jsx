@@ -46,6 +46,7 @@ export default function GeradorEtiquetas({ db }) {
   const [novoTipoProduto, setNovoTipoProduto] = useState('');
   const [novaQuantidade, setNovaQuantidade] = useState(1);
   const [quantidadeProdutos, setQuantidadeProdutos] = useState(1); // Estado para quantidade de produtos
+  const [formMode, setFormMode] = useState('add'); // Estado para controlar o modo do formulário
 
   const [logomarca, setLogomarca] = useState(null); // Estado para armazenar a logomarca
   const [intensidadeMarcaDagua, setIntensidadeMarcaDagua] = useState(0.1); // Estado para intensidade da marca d'água
@@ -73,6 +74,106 @@ export default function GeradorEtiquetas({ db }) {
       reader.readAsDataURL(file);
     } else {
       alert('Por favor, envie um arquivo PNG.');
+    }
+  };
+
+  // Abrir modal para editar tipo de produto
+  const handleEditTipoProduto = (tipo) => {
+    setNovoTipoProduto(tipo.nome);
+    setNovaQuantidade(tipo.quantidade);
+    setFormMode('edit'); // Alterar para modo de edição
+  };
+
+  // Adicionar tipo de produto no Firebase
+  const handleAddTipoProduto = async (e) => {
+    e.preventDefault();
+    if (novoTipoProduto.trim() === '') {
+      alert('Digite um tipo de produto.');
+      return;
+    }
+
+    // Verificar se o tipo de produto já existe (case-insensitive)
+    const tipoProdutoExistente = tiposProdutos.find(
+      (tipo) => tipo.nome.toLowerCase() === novoTipoProduto.trim().toLowerCase()
+    );
+
+    if (tipoProdutoExistente) {
+      alert('Este tipo de produto já foi adicionado.');
+      return;
+    }
+
+    try {
+      const docRef = await addDoc(collection(db, 'tiposProdutos'), {
+        nome: novoTipoProduto.trim(),
+        quantidade: novaQuantidade,
+      });
+
+      // Atualizar a lista local de tipos de produtos
+      setTiposProdutos([
+        ...tiposProdutos,
+        { id: docRef.id, nome: novoTipoProduto.trim(), quantidade: novaQuantidade },
+      ]);
+
+      // Limpar os campos do formulário
+      setNovoTipoProduto('');
+      setNovaQuantidade(1);
+    } catch (error) {
+      console.error('Erro ao adicionar tipo de produto:', error);
+    }
+  };
+
+  // Atualizar tipo de produto no Firebase
+  const handleUpdateTipoProduto = async (e) => {
+    e.preventDefault();
+    if (novoTipoProduto.trim() === '') {
+      alert('Digite um tipo de produto.');
+      return;
+    }
+
+    const tipoProdutoExistente = tiposProdutos.find(
+      (tipo) => tipo.nome.toLowerCase() === novoTipoProduto.trim().toLowerCase()
+    );
+
+    if (!tipoProdutoExistente) {
+      alert('Tipo de produto não encontrado para edição.');
+      return;
+    }
+
+    try {
+      const tipoProdutoRef = doc(db, 'tiposProdutos', tipoProdutoExistente.id);
+      await setDoc(tipoProdutoRef, {
+        nome: novoTipoProduto.trim(),
+        quantidade: novaQuantidade,
+      });
+
+      // Atualizar a lista local de tipos de produtos
+      setTiposProdutos((prev) =>
+        prev.map((tipo) =>
+          tipo.id === tipoProdutoExistente.id
+            ? { ...tipo, nome: novoTipoProduto.trim(), quantidade: novaQuantidade }
+            : tipo
+        )
+      );
+
+      // Limpar os campos do formulário e redefinir o modo
+      setNovoTipoProduto('');
+      setNovaQuantidade(1);
+      setFormMode('add'); // Voltar para o modo de adição
+    } catch (error) {
+      console.error('Erro ao atualizar tipo de produto:', error);
+    }
+  };
+
+  // Remover tipo de produto do Firebase
+  const handleRemoveTipoProduto = async (nome) => {
+    const tipoProduto = tiposProdutos.find((tipo) => tipo.nome === nome);
+    if (!tipoProduto) return;
+
+    try {
+      await deleteDoc(doc(db, 'tiposProdutos', tipoProduto.id));
+      setTiposProdutos(tiposProdutos.filter((tipo) => tipo.nome !== nome));
+    } catch (error) {
+      console.error('Erro ao remover tipo de produto:', error);
     }
   };
 
@@ -242,10 +343,22 @@ export default function GeradorEtiquetas({ db }) {
     });
 
     if (produto) {
-      if (!selectedProdutos.some((p) => p.id === produto.id)) {
-        setSelectedProdutos([...selectedProdutos, produto]);
+      const produtoExistente = selectedProdutos.find((p) => p.id === produto.id);
+      if (produtoExistente) {
+        // Somar a quantidade ao produto já existente
+        setSelectedProdutos((prev) =>
+          prev.map((p) =>
+            p.id === produto.id
+              ? { ...p, quantidade: (p.quantidade || 1) + quantidadeProdutos }
+              : p
+          )
+        );
+      } else {
+        // Adicionar novo produto com a quantidade informada
+        setSelectedProdutos([...selectedProdutos, { ...produto, quantidade: quantidadeProdutos }]);
       }
       setSkuInput('');
+      setQuantidadeProdutos(1); // Resetar a quantidade para o próximo produto
     } else {
       alert('Produto não encontrado. Certifique-se de que o SKU está correto.');
     }
@@ -255,47 +368,6 @@ export default function GeradorEtiquetas({ db }) {
   const handleRemoveProduto = (produtoId) => {
     setSelectedProdutos(selectedProdutos.filter(p => p.id !== produtoId))
   }
-
-  // Adicionar tipo de produto no Firebase
-  const handleAddTipoProduto = async (e) => {
-    e.preventDefault();
-    if (novoTipoProduto.trim() === '') {
-      alert('Digite um tipo de produto.');
-      return;
-    }
-    if (tiposProdutos.some((tipo) => tipo.nome === novoTipoProduto)) {
-      alert('Este tipo de produto já foi adicionado.');
-      return;
-    }
-
-    try {
-      const docRef = await addDoc(collection(db, 'tiposProdutos'), {
-        nome: novoTipoProduto,
-        quantidade: novaQuantidade,
-      });
-      setTiposProdutos([
-        ...tiposProdutos,
-        { id: docRef.id, nome: novoTipoProduto, quantidade: novaQuantidade },
-      ]);
-      setNovoTipoProduto('');
-      setNovaQuantidade(1);
-    } catch (error) {
-      console.error('Erro ao adicionar tipo de produto:', error);
-    }
-  };
-
-  // Remover tipo de produto do Firebase
-  const handleRemoveTipoProduto = async (nome) => {
-    const tipoProduto = tiposProdutos.find((tipo) => tipo.nome === nome);
-    if (!tipoProduto) return;
-
-    try {
-      await deleteDoc(doc(db, 'tiposProdutos', tipoProduto.id));
-      setTiposProdutos(tiposProdutos.filter((tipo) => tipo.nome !== nome));
-    } catch (error) {
-      console.error('Erro ao remover tipo de produto:', error);
-    }
-  };
 
   // Gerar etiquetas com base nos tipos de produtos e palavras-chave
   const gerarEtiquetas = () => {
@@ -310,23 +382,42 @@ export default function GeradorEtiquetas({ db }) {
     }
   
     const etiquetas = [];
+    let totalEtiquetas = 0; // Variável para somar o total de etiquetas geradas
+  
     selectedProdutos.forEach((produto) => {
-      // Buscar o tipo de produto na tabela de tipos cadastrados usando palavras-chave
-      const tipoProduto = tiposProdutos.find((tipo) =>
-        produto.nome.toLowerCase().includes(tipo.nome.toLowerCase())
-      );
+      const nomeProduto = produto.nome.toLowerCase();
+      const palavrasProduto = nomeProduto.split(' ').slice(0, 2); // Considerar as duas primeiras palavras do produto
+  
+      // Buscar o tipo de produto na tabela com base nas duas primeiras palavras
+      let tipoProduto = tiposProdutos.find((tipo) => {
+        const palavrasChave = tipo.nome.toLowerCase().split(' ').slice(0, 2); // Duas primeiras palavras do tipo
+        return palavrasChave.length === palavrasProduto.length && palavrasChave.every((palavra, index) => palavra === palavrasProduto[index]); // Verificar correspondência exata das duas palavras
+      });
+  
+      // Caso não encontre com as duas palavras, buscar com a primeira palavra
+      if (!tipoProduto) {
+        tipoProduto = tiposProdutos.find((tipo) => {
+          const primeiraPalavra = tipo.nome.toLowerCase().split(' ')[0]; // Primeira palavra do tipo
+          return palavrasProduto[0] === primeiraPalavra; // Verificar correspondência exata da primeira palavra
+        });
+      }
+  
+      if (!tipoProduto) {
+        console.warn(`Tipo de produto não encontrado para o produto: ${produto.nome}`);
+      }
   
       // Determinar a quantidade de etiquetas por unidade do produto
       const etiquetasPorUnidade = tipoProduto ? tipoProduto.quantidade : 1;
   
-      // Determinar a quantidade total de etiquetas com base na quantidade informada na lista temporária
-      const quantidadeInformada = produto.quantidade || quantidadeProdutos; // Usar quantidade informada ou padrão
+      // Determinar a quantidade total de etiquetas para este produto
+      const quantidadeInformada = produto.quantidade || 1; // Usar quantidade fixa do produto
       const quantidadeTotalEtiquetas = etiquetasPorUnidade * quantidadeInformada;
   
+      // Adicionar etiquetas para este produto
       for (let i = 0; i < quantidadeTotalEtiquetas; i++) {
         etiquetas.push({
           id: uuidv4(),
-          produto,
+          produto: { ...produto }, // Garantir que a quantidade do produto não seja alterada
           cliente: incluirCliente
             ? {
                 ...selectedCliente,
@@ -337,10 +428,15 @@ export default function GeradorEtiquetas({ db }) {
           data: incluirData ? new Date().toLocaleDateString('pt-BR') : null,
           numeroSerie: incluirNumeroSerie ? `${produto.sku}-${String(i + 1).padStart(3, '0')}` : null,
           ordemEntrega: i + 1, // Adicionar número de ordem de entrega
+          tamanhoFonteNomeProduto: configuracoes.largura > 100 ? 28 : configuracoes.tamanhoFonte, // Fonte grande para etiquetas maiores
         });
       }
+  
+      // Somar ao total de etiquetas geradas
+      totalEtiquetas += quantidadeTotalEtiquetas;
     });
   
+    console.log(`Total de etiquetas geradas: ${totalEtiquetas}`); // Log do total de etiquetas geradas
     setEtiquetasGeradas(etiquetas);
     setNumPages(Math.ceil(etiquetas.length / configuracoes.quantidadePorPagina));
     setShowPreview(true);
@@ -359,7 +455,7 @@ export default function GeradorEtiquetas({ db }) {
   
     const margemEsquerda = 4; // Alterado para 4mm
     const margemSuperior = 5; // Margem superior fixa
-    const margemEntreEtiquetas = 5; // Margem entre etiquetas
+    const margemEntreEtiquetas = 3; // Alterado para 3mm
   
     const etiquetasPorLinha = 2; // Duas colunas
     const etiquetasPorColuna = 6; // Seis etiquetas por coluna
@@ -457,8 +553,8 @@ export default function GeradorEtiquetas({ db }) {
       doc.setLineWidth(0.4); // Largura da borda dobrada (originalmente 0.2)
       doc.rect(x, y, largura, altura);
 
-      // Adicionar Nome do Produto com suporte a quebra de linha
-      doc.setFontSize(12);
+      // Adicionar Nome do Produto com fonte ajustada para etiquetas grandes
+      doc.setFontSize(etiqueta.tamanhoFonteNomeProduto);
       doc.setFont('helvetica', 'bold');
       const nomeProduto = doc.splitTextToSize(etiqueta.produto.nome, largura - 4);
       doc.text(nomeProduto, x + 2, y + altura - 20);
@@ -506,7 +602,7 @@ export default function GeradorEtiquetas({ db }) {
 
     const margemEsquerda = 4; // Alterado para 4mm
     const margemSuperior = 5; // Margem superior fixa
-    const margemEntreEtiquetas = 5; // Margem entre etiquetas
+    const margemEntreEtiquetas = 3; // Alterado para 3mm
 
     const etiquetasPorLinha = 2; // Duas colunas
     const etiquetasPorColuna = 6; // Seis etiquetas por coluna
@@ -604,8 +700,8 @@ export default function GeradorEtiquetas({ db }) {
       doc.setLineWidth(0.4); // Largura da borda dobrada (originalmente 0.2)
       doc.rect(x, y, largura, altura);
 
-      // Adicionar Nome do Produto com suporte a quebra de linha
-      doc.setFontSize(12);
+      // Adicionar Nome do Produto com fonte ajustada para etiquetas grandes
+      doc.setFontSize(etiqueta.tamanhoFonteNomeProduto);
       doc.setFont('helvetica', 'bold');
       const nomeProduto = doc.splitTextToSize(etiqueta.produto.nome, largura - 4);
       doc.text(nomeProduto, x + 2, y + altura - 20);
@@ -856,7 +952,7 @@ export default function GeradorEtiquetas({ db }) {
 
               <div className="mt-6">
                 <h4 className="text-sm font-semibold text-gray-900">Tipos de Produto e Quantidades</h4>
-                <form onSubmit={handleAddTipoProduto} className="mt-4 flex gap-2">
+                <form onSubmit={formMode === 'edit' ? handleUpdateTipoProduto : handleAddTipoProduto} className="mt-4 flex gap-2">
                   <input
                     type="text"
                     value={novoTipoProduto}
@@ -876,7 +972,7 @@ export default function GeradorEtiquetas({ db }) {
                     type="submit"
                     className="inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500"
                   >
-                    Adicionar
+                    {formMode === 'edit' ? 'Atualizar' : 'Adicionar'}
                   </button>
                 </form>
                 <div className="mt-4">
@@ -897,7 +993,7 @@ export default function GeradorEtiquetas({ db }) {
                             Quantidade
                           </th>
                           <th scope="col" className="relative px-6 py-3">
-                            <span className="sr-only">Remover</span>
+                            <span className="sr-only">Ações</span>
                           </th>
                         </tr>
                       </thead>
@@ -907,6 +1003,15 @@ export default function GeradorEtiquetas({ db }) {
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{tipo.nome}</td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{tipo.quantidade}</td>
                             <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                              <button
+                                onClick={() => {
+                                  handleEditTipoProduto(tipo);
+                                  setFormMode('edit'); // Alterar para modo de edição
+                                }}
+                                className="text-indigo-600 hover:text-indigo-900 mr-4"
+                              >
+                                Editar
+                              </button>
                               <button
                                 onClick={() => handleRemoveTipoProduto(tipo.nome)}
                                 className="text-red-600 hover:text-red-900"
