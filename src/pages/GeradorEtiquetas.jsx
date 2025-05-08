@@ -6,7 +6,8 @@ import { v4 as uuidv4 } from 'uuid'
 import {
   ArrowDownTrayIcon,
   DocumentTextIcon,
-  AdjustmentsHorizontalIcon
+  AdjustmentsHorizontalIcon,
+  MagnifyingGlassIcon
 } from '@heroicons/react/24/outline'
 
 export default function GeradorEtiquetas({ db }) {
@@ -52,6 +53,64 @@ export default function GeradorEtiquetas({ db }) {
   const [intensidadeMarcaDagua, setIntensidadeMarcaDagua] = useState(0.1); // Estado para intensidade da marca d'água
 
   const previewRef = useRef(null)
+
+  // Modal de busca de produto
+  const [showBuscaProdutoModal, setShowBuscaProdutoModal] = useState(false);
+  const [buscaProdutoTermo, setBuscaProdutoTermo] = useState('');
+  const [buscaProdutoResultados, setBuscaProdutoResultados] = useState([]);
+
+  // Adicione os estados para o modal de busca de cliente
+  const [showBuscaClienteModal, setShowBuscaClienteModal] = useState(false);
+  const [buscaClienteTermo, setBuscaClienteTermo] = useState('');
+  const [buscaClienteResultados, setBuscaClienteResultados] = useState([]);
+
+  // Atualizar resultados da busca de produto
+  useEffect(() => {
+    if (showBuscaProdutoModal && buscaProdutoTermo.length > 0) {
+      const termo = buscaProdutoTermo.toLowerCase();
+      setBuscaProdutoResultados(
+        produtos.filter(
+          p => p.nome && p.nome.toLowerCase().includes(termo)
+        )
+      );
+    } else {
+      setBuscaProdutoResultados([]);
+    }
+  }, [buscaProdutoTermo, produtos, showBuscaProdutoModal]);
+
+  // Atualizar resultados da busca de cliente
+  useEffect(() => {
+    if (showBuscaClienteModal && buscaClienteTermo.length > 0) {
+      const termo = buscaClienteTermo.toLowerCase();
+      setBuscaClienteResultados(
+        clientes.filter(
+          c => c.nome && c.nome.toLowerCase().includes(termo)
+        )
+      );
+    } else {
+      setBuscaClienteResultados([]);
+    }
+  }, [buscaClienteTermo, clientes, showBuscaClienteModal]);
+
+  // Selecionar produto do modal
+  const handleSelecionarProdutoBusca = (produto) => {
+    setSkuInput(String(produto.sku)); // Garante atualização controlada do campo
+    setShowBuscaProdutoModal(false);
+    setBuscaProdutoTermo('');
+    setBuscaProdutoResultados([]);
+    setTimeout(() => {
+      handleAddProduto();
+    }, 0);
+  };
+
+  // Selecionar cliente do modal
+  const handleSelecionarClienteBusca = (cliente) => {
+    setCodigoClienteInput(cliente.codigo ? String(cliente.codigo) : '');
+    setShowBuscaClienteModal(false);
+    setBuscaClienteTermo('');
+    setBuscaClienteResultados([]);
+    setSelectedCliente(cliente);
+  };
 
   const handleLogomarcaUpload = async (e) => {
     const file = e.target.files[0];
@@ -600,7 +659,7 @@ export default function GeradorEtiquetas({ db }) {
       altura
     } = configuracoes;
 
-    const margemEsquerda = 4; // Alterado para 4mm
+    const margemEsquerda = 5; // Alterado para 5mm
     const margemSuperior = 5; // Margem superior fixa
     const margemEntreEtiquetas = 3; // Alterado para 3mm
 
@@ -697,7 +756,7 @@ export default function GeradorEtiquetas({ db }) {
       }
 
       // Desenhar o contorno da etiqueta com largura da borda aumentada em 100%
-      doc.setLineWidth(0.4); // Largura da borda dobrada (originalmente 0.2)
+      doc.setLineWidth(0.6); // Largura da borda dobrada (originalmente 0.2)
       doc.rect(x, y, largura, altura);
 
       // Adicionar Nome do Produto com fonte ajustada para etiquetas grandes
@@ -1040,28 +1099,39 @@ export default function GeradorEtiquetas({ db }) {
               </div>
               <div className="px-4 py-5 sm:p-6">
                 <form onSubmit={(e) => e.preventDefault()} className="flex flex-col gap-4">
-                  <div className="flex gap-2">
-                    <input
-                      type="text"
-                      value={skuInput}
-                      onChange={(e) => setSkuInput(e.target.value)}
-                      placeholder="Digite o SKU do produto"
-                      className="flex-grow rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-                      style={{ flexBasis: '75%' }} // Campo SKU com 75% do tamanho
-                    />
+                  <div className="flex gap-2 items-center" style={{ position: 'relative' }}>
+                    <div style={{ position: 'relative', width: '75%', minWidth: 0, display: 'flex', alignItems: 'center' }}>
+                      <input
+                        type="text"
+                        value={skuInput}
+                        onChange={(e) => setSkuInput(e.target.value)}
+                        placeholder="Digite o SKU"
+                        className="flex-grow rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                        style={{ paddingRight: 10 }}
+                      />
+                      <button
+                        type="button"
+                        title="Buscar produto pelo nome"
+                        onClick={() => setShowBuscaProdutoModal(true)}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded hover:bg-gray-100"
+                        tabIndex={-1}
+                      >
+                        <MagnifyingGlassIcon className="h-5 w-5 text-gray-500" />
+                      </button>
+                    </div>
                     <input
                       type="text"
                       value={quantidadeProdutos}
                       onChange={(e) => {
-                        const value = e.target.value.replace(/\D/g, ''); // Remove caracteres não numéricos
+                        const value = e.target.value.replace(/\D/g, '');
                         setQuantidadeProdutos(value ? Number(value) : '');
                       }}
                       placeholder="Qtd."
                       className="rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-                      style={{ width: '20%' }}
-                      inputMode="numeric" // Define o campo para aceitar apenas números
+                      style={{ width: '25%' }}
+                      inputMode="numeric"
                       onKeyDown={(e) => {
-                        if (['e', 'E', '-', '+', '.'].includes(e.key)) e.preventDefault(); // Previne entrada de caracteres inválidos
+                        if (['e', 'E', '-', '+', '.'].includes(e.key)) e.preventDefault();
                       }}
                     />
                   </div>
@@ -1183,14 +1253,25 @@ export default function GeradorEtiquetas({ db }) {
                         <label htmlFor="codigoCliente" className="block text-sm font-medium text-gray-700">
                           Código do Cliente
                         </label>
-                        <input
-                          type="text"
-                          id="codigoCliente"
-                          value={codigoClienteInput}
-                          onChange={(e) => setCodigoClienteInput(e.target.value)}
-                          placeholder="Digite o código do cliente"
-                          className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-                        />
+                        <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                          <input
+                            type="text"
+                            id="codigoCliente"
+                            value={codigoClienteInput}
+                            onChange={(e) => setCodigoClienteInput(e.target.value)}
+                            placeholder="Digite o código do cliente"
+                            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                          />
+                          <button
+                            type="button"
+                            title="Buscar cliente pelo nome"
+                            onClick={() => setShowBuscaClienteModal(true)}
+                            className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded hover:bg-gray-100"
+                            tabIndex={-1}
+                          >
+                            <MagnifyingGlassIcon className="h-5 w-5 text-gray-500" />
+                          </button>
+                        </div>
                       </div>
                       <div>
                         <label htmlFor="cliente" className="block text-sm font-medium text-gray-700">
@@ -1386,6 +1467,106 @@ export default function GeradorEtiquetas({ db }) {
           )}
         </div>
       </div>
+
+      {/* Modal de busca de produto */}
+      {showBuscaProdutoModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-40">
+          <div className="bg-white rounded-lg shadow-lg p-6 w-full max-w-lg relative">
+            <button
+              className="absolute top-2 right-2 text-gray-400 hover:text-gray-600"
+              onClick={() => setShowBuscaProdutoModal(false)}
+              aria-label="Fechar"
+            >
+              ×
+            </button>
+            <h2 className="text-lg font-semibold mb-4">Buscar Produto</h2>
+            <input
+              type="text"
+              autoFocus
+              value={buscaProdutoTermo}
+              onChange={e => setBuscaProdutoTermo(e.target.value)}
+              placeholder="Digite o nome do produto"
+              className="w-full mb-4 rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+            />
+            <div className="max-h-64 overflow-y-auto">
+              {buscaProdutoTermo.length === 0 && (
+                <div className="text-gray-400 text-sm text-center py-6">Digite para buscar produtos...</div>
+              )}
+              {buscaProdutoTermo.length > 0 && buscaProdutoResultados.length === 0 && (
+                <div className="text-gray-400 text-sm text-center py-6">Nenhum produto encontrado.</div>
+              )}
+              {buscaProdutoResultados.length > 0 && (
+                <ul>
+                  {buscaProdutoResultados.map(produto => (
+                    <li
+                      key={produto.id}
+                      className="px-3 py-2 cursor-pointer hover:bg-indigo-100 rounded flex justify-between items-center"
+                      onClick={() => handleSelecionarProdutoBusca(produto)}
+                    >
+                      <span>
+                        {produto.nome}
+                        <span className="text-gray-400 ml-2 text-xs">({produto.sku})</span>
+                      </span>
+                      <span className="text-xs text-gray-500">Selecionar</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de busca de cliente */}
+      {showBuscaClienteModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-40">
+          <div className="bg-white rounded-lg shadow-lg p-6 w-full max-w-lg relative">
+            <button
+              className="absolute top-2 right-2 text-gray-400 hover:text-gray-600"
+              onClick={() => setShowBuscaClienteModal(false)}
+              aria-label="Fechar"
+            >
+              ×
+            </button>
+            <h2 className="text-lg font-semibold mb-4">Buscar Cliente</h2>
+            <input
+              type="text"
+              autoFocus
+              value={buscaClienteTermo}
+              onChange={e => setBuscaClienteTermo(e.target.value)}
+              placeholder="Digite o nome do cliente"
+              className="w-full mb-4 rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+            />
+            <div className="max-h-64 overflow-y-auto">
+              {buscaClienteTermo.length === 0 && (
+                <div className="text-gray-400 text-sm text-center py-6">Digite para buscar clientes...</div>
+              )}
+              {buscaClienteTermo.length > 0 && buscaClienteResultados.length === 0 && (
+                <div className="text-gray-400 text-sm text-center py-6">Nenhum cliente encontrado.</div>
+              )}
+              {buscaClienteResultados.length > 0 && (
+                <ul>
+                  {buscaClienteResultados.map(cliente => (
+                    <li
+                      key={cliente.id}
+                      className="px-3 py-2 cursor-pointer hover:bg-indigo-100 rounded flex justify-between items-center"
+                      onClick={() => handleSelecionarClienteBusca(cliente)}
+                    >
+                      <span>
+                        {cliente.nome}
+                        <span className="text-gray-400 ml-2 text-xs">
+                          {cliente.codigo ? `(${cliente.codigo})` : ''}
+                        </span>
+                      </span>
+                      <span className="text-xs text-gray-500">Selecionar</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
