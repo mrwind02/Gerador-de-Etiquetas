@@ -504,35 +504,44 @@ export default function GeradorEtiquetas({ db }) {
   // Função para exportar etiquetas como PDF
   const exportarEtiquetasPDF = () => {
     const doc = new jsPDF({ unit: 'mm', format: 'a4' });
-  
+
     const {
       margemDireita,
       margemInferior,
       largura,
       altura
     } = configuracoes;
-  
-    const margemEsquerda = 4; // Alterado para 4mm
-    const margemSuperior = 5; // Margem superior fixa
-    const margemEntreEtiquetas = 3; // Alterado para 3mm
-  
-    const etiquetasPorLinha = 2; // Duas colunas
-    const etiquetasPorColuna = 6; // Seis etiquetas por coluna
-    const etiquetasPorPagina = etiquetasPorLinha * etiquetasPorColuna;
-  
+
+    const isModeloGrande = largura > 100;
+    const margemEsquerda = 4;
+    const margemSuperior = 5;
+    const margemEntreColunas = 6;
+    const margemEntreLinhas = 3;
+
+    let etiquetasPorLinha, etiquetasPorColuna, etiquetasPorPagina;
+    if (isModeloGrande) {
+      etiquetasPorLinha = 1;
+      etiquetasPorColuna = 3;
+      etiquetasPorPagina = 3;
+    } else {
+      etiquetasPorLinha = 2;
+      etiquetasPorColuna = 6;
+      etiquetasPorPagina = etiquetasPorLinha * etiquetasPorColuna;
+    }
+
     etiquetasGeradas.forEach((etiqueta, index) => {
       const posicaoNaPagina = index % etiquetasPorPagina;
-  
+
       if (posicaoNaPagina === 0 && index !== 0) {
         doc.addPage();
       }
-  
-      const linha = Math.floor(posicaoNaPagina / etiquetasPorLinha); // Alterado para preencher linha por linha
+
+      const linha = Math.floor(posicaoNaPagina / etiquetasPorLinha);
       const coluna = posicaoNaPagina % etiquetasPorLinha;
-  
-      const x = margemEsquerda + coluna * (largura + margemEntreEtiquetas);
-      const y = margemSuperior + linha * (altura + margemEntreEtiquetas);
-  
+
+      const x = margemEsquerda + coluna * (largura + margemEntreColunas);
+      const y = margemSuperior + linha * (altura + margemEntreLinhas);
+
       // Adicionar campo de ordem de entrega no canto superior direito, se habilitado
       if (incluirOrdemEntrega) {
         const campoOrdemX = x + largura - 18; // Posicionar a 4mm da margem direita
@@ -609,44 +618,88 @@ export default function GeradorEtiquetas({ db }) {
       }
   
       // Desenhar o contorno da etiqueta com largura da borda aumentada em 100%
-      doc.setLineWidth(0.4); // Largura da borda dobrada (originalmente 0.2)
+      doc.setLineWidth(0.6); // Largura da borda alterada para 0.6
       doc.rect(x, y, largura, altura);
 
-      // Adicionar Nome do Produto com fonte ajustada para etiquetas grandes
-      doc.setFontSize(etiqueta.tamanhoFonteNomeProduto);
-      doc.setFont('helvetica', 'bold');
-      const nomeProduto = doc.splitTextToSize(etiqueta.produto.nome, largura - 4);
-      doc.text(nomeProduto, x + 2, y + altura - 20);
-  
-      // Adicionar Cliente
-      if (incluirCliente && etiqueta.cliente) {
-        doc.setFontSize(10);
-        doc.setFont('helvetica', 'normal');
-        doc.text(`Cliente: ${etiqueta.cliente.nome}`, x + 2, y + altura - 10);
-      }
-  
-      // Adicionar Cidade e UF e Número de Série na mesma linha
-      if (incluirCliente && etiqueta.cliente && etiqueta.cliente.cidade && etiqueta.cliente.uf) {
-        doc.setFontSize(8);
-        doc.text(
-          `${etiqueta.cliente.cidade} - ${etiqueta.cliente.uf}`,
-          x + 2,
-          y + altura - 5
-        );
-      }
-      if (incluirNumeroSerie && etiqueta.numeroSerie) {
-        doc.text(
-          `N° Série: ${etiqueta.numeroSerie}`,
-          x + largura - 2,
-          y + altura - 5,
-          { align: 'right' }
-        );
+      // --- Corrigir posição do nome do produto e cliente apenas para modelo grande ---
+      if (isModeloGrande) {
+        // Nome do produto (duas linhas acima da posição padrão)
+        doc.setFontSize(etiqueta.tamanhoFonteNomeProduto);
+        doc.setFont('helvetica', 'bold');
+        const nomeProduto = doc.splitTextToSize(etiqueta.produto.nome, largura - 4);
+        doc.text(nomeProduto, x + 2, y + altura - 30);
+
+        // Cliente: uma linha abaixo da posição anterior (y + altura - 15 + 5 = y + altura - 10)
+        if (incluirCliente && etiqueta.cliente) {
+          doc.setFontSize(13);
+          doc.setFont('helvetica', 'normal');
+          doc.text(`Cliente: ${etiqueta.cliente.nome}`, x + 2, y + altura - 10);
+        }
+        // Cidade/UF: 5mm acima do rodapé (corrigido para aceitar tanto .uf quanto .estado)
+        if (
+          incluirCliente &&
+          etiqueta.cliente &&
+          etiqueta.cliente.cidade &&
+          (typeof etiqueta.cliente.uf === 'string' && etiqueta.cliente.uf.trim() !== '' ? etiqueta.cliente.uf : (etiqueta.cliente.estado || ''))
+        ) {
+          doc.setFontSize(10); // <-- tamanho 10 para cidade/UF no modelo grande
+          doc.text(
+            `${etiqueta.cliente.cidade} - ${etiqueta.cliente.uf}`,
+            x + 2,
+            y + altura - 5
+          );
+        }
+        // Número de série (mantém na mesma linha da cidade/UF, à direita)
+        if (incluirNumeroSerie && etiqueta.numeroSerie) {
+          doc.setFontSize(10); // <-- tamanho 10 para número de série no modelo grande
+          doc.text(
+            `N° Série: ${etiqueta.numeroSerie}`,
+            x + largura - 2,
+            y + altura - 5,
+            { align: 'right' }
+          );
+        }
+      } else {
+        doc.setFontSize(etiqueta.tamanhoFonteNomeProduto);
+        doc.setFont('helvetica', 'bold');
+        const nomeProduto = doc.splitTextToSize(etiqueta.produto.nome, largura - 4);
+        doc.text(nomeProduto, x + 2, y + altura - 20);
+
+        if (incluirCliente && etiqueta.cliente) {
+          doc.setFontSize(10);
+          doc.setFont('helvetica', 'normal');
+          doc.text(`Cliente: ${etiqueta.cliente.nome}`, x + 2, y + altura - 10);
+        }
+        if (
+          incluirCliente &&
+          etiqueta.cliente &&
+          etiqueta.cliente.cidade &&
+          (typeof etiqueta.cliente.uf === 'string' && etiqueta.cliente.uf.trim() !== '' ? etiqueta.cliente.uf : (etiqueta.cliente.estado || ''))
+        ) {
+          doc.setFontSize(8);
+          const uf = (typeof etiqueta.cliente.uf === 'string' && etiqueta.cliente.uf.trim() !== '')
+            ? etiqueta.cliente.uf
+            : (etiqueta.cliente.estado || '');
+          doc.text(
+            `${etiqueta.cliente.cidade} - ${uf}`,
+            x + 2,
+            y + altura - 5
+          );
+        }
+        if (incluirNumeroSerie && etiqueta.numeroSerie) {
+          doc.setFontSize(8);
+          doc.text(
+            `N° Série: ${etiqueta.numeroSerie}`,
+            x + largura - 2,
+            y + altura - 5,
+            { align: 'right' }
+          );
+        }
       }
     });
-  
+
     doc.save("etiquetas.pdf");
   };
-  
 
   // Função para imprimir etiquetas
   const imprimirEtiquetas = () => {
@@ -659,13 +712,22 @@ export default function GeradorEtiquetas({ db }) {
       altura
     } = configuracoes;
 
-    const margemEsquerda = 5; // Alterado para 5mm
-    const margemSuperior = 5; // Margem superior fixa
-    const margemEntreEtiquetas = 3; // Alterado para 3mm
+    const isModeloGrande = largura > 100;
+    const margemEsquerda = 4;
+    const margemSuperior = 5;
+    const margemEntreColunas = 6;
+    const margemEntreLinhas = 3;
 
-    const etiquetasPorLinha = 2; // Duas colunas
-    const etiquetasPorColuna = 6; // Seis etiquetas por coluna
-    const etiquetasPorPagina = etiquetasPorLinha * etiquetasPorColuna;
+    let etiquetasPorLinha, etiquetasPorColuna, etiquetasPorPagina;
+    if (isModeloGrande) {
+      etiquetasPorLinha = 1;
+      etiquetasPorColuna = 3;
+      etiquetasPorPagina = 3;
+    } else {
+      etiquetasPorLinha = 2;
+      etiquetasPorColuna = 6;
+      etiquetasPorPagina = etiquetasPorLinha * etiquetasPorColuna;
+    }
 
     etiquetasGeradas.forEach((etiqueta, index) => {
       const posicaoNaPagina = index % etiquetasPorPagina;
@@ -674,11 +736,11 @@ export default function GeradorEtiquetas({ db }) {
         doc.addPage();
       }
 
-      const linha = Math.floor(posicaoNaPagina / etiquetasPorLinha); // Alterado para preencher linha por linha
+      const linha = Math.floor(posicaoNaPagina / etiquetasPorLinha);
       const coluna = posicaoNaPagina % etiquetasPorLinha;
 
-      const x = margemEsquerda + coluna * (largura + margemEntreEtiquetas);
-      const y = margemSuperior + linha * (altura + margemEntreEtiquetas);
+      const x = margemEsquerda + coluna * (largura + margemEntreColunas);
+      const y = margemSuperior + linha * (altura + margemEntreLinhas);
 
       // Adicionar campo de ordem de entrega no canto superior direito, se habilitado
       if (incluirOrdemEntrega) {
@@ -756,38 +818,83 @@ export default function GeradorEtiquetas({ db }) {
       }
 
       // Desenhar o contorno da etiqueta com largura da borda aumentada em 100%
-      doc.setLineWidth(0.6); // Largura da borda dobrada (originalmente 0.2)
+      doc.setLineWidth(0.6); // Largura da borda alterada para 0.6
       doc.rect(x, y, largura, altura);
 
-      // Adicionar Nome do Produto com fonte ajustada para etiquetas grandes
-      doc.setFontSize(etiqueta.tamanhoFonteNomeProduto);
-      doc.setFont('helvetica', 'bold');
-      const nomeProduto = doc.splitTextToSize(etiqueta.produto.nome, largura - 4);
-      doc.text(nomeProduto, x + 2, y + altura - 20);
+      // --- Corrigir posição do nome do produto e cliente apenas para modelo grande ---
+      if (isModeloGrande) {
+        // Nome do produto (duas linhas acima da posição padrão)
+        doc.setFontSize(etiqueta.tamanhoFonteNomeProduto);
+        doc.setFont('helvetica', 'bold');
+        const nomeProduto = doc.splitTextToSize(etiqueta.produto.nome, largura - 4);
+        doc.text(nomeProduto, x + 2, y + altura - 30);
 
-      // Adicionar Cliente
-      if (incluirCliente && etiqueta.cliente) {
-        doc.setFontSize(10);
-        doc.setFont('helvetica', 'normal');
-        doc.text(`Cliente: ${etiqueta.cliente.nome}`, x + 2, y + altura - 10);
-      }
+        // Cliente: uma linha abaixo da posição anterior (y + altura - 15 + 5 = y + altura - 10)
+        if (incluirCliente && etiqueta.cliente) {
+          doc.setFontSize(13);
+          doc.setFont('helvetica', 'normal');
+          doc.text(`Cliente: ${etiqueta.cliente.nome}`, x + 2, y + altura - 10);
+        }
+        // Cidade/UF: 5mm acima do rodapé (corrigido para aceitar tanto .uf quanto .estado)
+        if (
+          incluirCliente &&
+          etiqueta.cliente &&
+          etiqueta.cliente.cidade &&
+          (typeof etiqueta.cliente.uf === 'string' && etiqueta.cliente.uf.trim() !== '' ? etiqueta.cliente.uf : (etiqueta.cliente.estado || ''))
+        ) {
+          doc.setFontSize(10); // <-- tamanho 10 para cidade/UF no modelo grande
+          doc.text(
+            `${etiqueta.cliente.cidade} - ${etiqueta.cliente.uf}`,
+            x + 2,
+            y + altura - 5
+          );
+        }
+        // Número de série (mantém na mesma linha da cidade/UF, à direita)
+        if (incluirNumeroSerie && etiqueta.numeroSerie) {
+          doc.setFontSize(10); // <-- tamanho 10 para número de série no modelo grande
+          doc.text(
+            `N° Série: ${etiqueta.numeroSerie}`,
+            x + largura - 2,
+            y + altura - 5,
+            { align: 'right' }
+          );
+        }
+      } else {
+        doc.setFontSize(etiqueta.tamanhoFonteNomeProduto);
+        doc.setFont('helvetica', 'bold');
+        const nomeProduto = doc.splitTextToSize(etiqueta.produto.nome, largura - 4);
+        doc.text(nomeProduto, x + 2, y + altura - 20);
 
-      // Adicionar Cidade e Estado e Número de Série na mesma linha
-      if (incluirCliente && etiqueta.cliente && etiqueta.cliente.cidade && etiqueta.cliente.estado) {
-        doc.setFontSize(8);
-        doc.text(
-          `${etiqueta.cliente.cidade} - ${etiqueta.cliente.estado}`,
-          x + 2,
-          y + altura - 5
-        );
-      }
-      if (incluirNumeroSerie && etiqueta.numeroSerie) {
-        doc.text(
-          `N° Série: ${etiqueta.numeroSerie}`,
-          x + largura - 2,
-          y + altura - 5,
-          { align: 'right' }
-        );
+        if (incluirCliente && etiqueta.cliente) {
+          doc.setFontSize(10);
+          doc.setFont('helvetica', 'normal');
+          doc.text(`Cliente: ${etiqueta.cliente.nome}`, x + 2, y + altura - 10);
+        }
+        if (
+          incluirCliente &&
+          etiqueta.cliente &&
+          etiqueta.cliente.cidade &&
+          (typeof etiqueta.cliente.uf === 'string' && etiqueta.cliente.uf.trim() !== '' ? etiqueta.cliente.uf : (etiqueta.cliente.estado || ''))
+        ) {
+          doc.setFontSize(8);
+          const uf = (typeof etiqueta.cliente.uf === 'string' && etiqueta.cliente.uf.trim() !== '')
+            ? etiqueta.cliente.uf
+            : (etiqueta.cliente.estado || '');
+          doc.text(
+            `${etiqueta.cliente.cidade} - ${uf}`,
+            x + 2,
+            y + altura - 5
+          );
+        }
+        if (incluirNumeroSerie && etiqueta.numeroSerie) {
+          doc.setFontSize(8);
+          doc.text(
+            `N° Série: ${etiqueta.numeroSerie}`,
+            x + largura - 2,
+            y + altura - 5,
+            { align: 'right' }
+          );
+        }
       }
     });
 
@@ -1240,7 +1347,7 @@ export default function GeradorEtiquetas({ db }) {
                     </label>
                     <input
                       type="text"
-                      placeholder="Ex: 01, 10A"
+                      placeholder="Ex: 01"
                       value={ordemEntregaTexto} // Usar o estado para o texto
                       onChange={(e) => setOrdemEntregaTexto(e.target.value.toUpperCase())} // Atualizar o estado
                       className="ml-3 block w-20 rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
@@ -1348,82 +1455,163 @@ export default function GeradorEtiquetas({ db }) {
                 </div>
 
                 <div className="p-6">
-                  <div className="grid grid-cols-2 gap-6">
-                    {etiquetasGeradas
-                      .slice((currentPage - 1) * etiquetasPorPagina, currentPage * etiquetasPorPagina)
-                      .map((etiqueta) => (
-                        <div
-                          key={etiqueta.id}
-                          className="bg-white border border-gray-300 relative"
-                          style={{
-                            width: `${configuracoes.largura}mm`,
-                            height: `${configuracoes.altura}mm`,
-                            padding: '5mm',
-                            display: 'flex',
-                            flexDirection: 'column',
-                            justifyContent: 'space-between',
-                            position: 'relative',
-                          }}
-                        >
-                          {incluirCodigoBarras && (
-                            <div className="mt-2">
-                              <div
-                                className="w-full h-8 flex items-end justify-center"
-                                style={{ gap: '0.5mm' }}
-                              >
-                                {Array.from({ length: 30 }).map((_, i) => (
-                                  <div
-                                    key={i}
-                                    className="bg-black"
-                                    style={{
-                                      width: '0.8mm',
-                                      height: `${Math.floor(Math.random() * 6) + 2}mm`,
-                                    }}
-                                  />
-                                ))}
-                              </div>
-                            </div>
-                          )}
-
+                  {/* VISUALIZAÇÃO: Corrigir para 3 etiquetas por página no modelo grande */}
+                  {configuracoes.largura > 100 ? (
+                    <div className="flex flex-col gap-6">
+                      {etiquetasGeradas
+                        .slice((currentPage - 1) * 3, currentPage * 3)
+                        .map((etiqueta, idx) => (
                           <div
+                            key={etiqueta.id}
+                            className="bg-white border border-gray-300 relative"
                             style={{
-                              position: 'absolute',
-                              bottom: '2mm',
-                              left: '2mm',
-                              right: '2mm',
+                              width: `${configuracoes.largura}mm`,
+                              height: `${configuracoes.altura}mm`,
+                              marginBottom: idx < 2 ? '18px' : 0, // 3mm * 6 = 18px approx for visual gap
+                              padding: '5mm',
                               display: 'flex',
                               flexDirection: 'column',
-                              fontSize: '10pt',
-                              textAlign: 'left',
+                              justifyContent: 'space-between',
+                              position: 'relative',
                             }}
                           >
-                            <div className="font-bold">{etiqueta.produto.nome}</div>
-                            {incluirCliente && etiqueta.cliente && (
-                              <div>Cliente: {etiqueta.cliente.nome}</div>
+                            {incluirCodigoBarras && (
+                              <div className="mt-2">
+                                <div
+                                  className="w-full h-8 flex items-end justify-center"
+                                  style={{ gap: '0.5mm' }}
+                                >
+                                  {Array.from({ length: 30 }).map((_, i) => (
+                                    <div
+                                      key={i}
+                                      className="bg-black"
+                                      style={{
+                                        width: '0.8mm',
+                                        height: `${Math.floor(Math.random() * 6) + 2}mm`,
+                                      }}
+                                    />
+                                  ))}
+                                </div>
+                              </div>
                             )}
+
                             <div
                               style={{
+                                position: 'absolute',
+                                bottom: '2mm',
+                                left: '2mm',
+                                right: '2mm',
                                 display: 'flex',
-                                justifyContent: 'space-between',
-                                fontSize: '8pt',
-                                marginTop: '2mm',
+                                flexDirection: 'column',
+                                fontSize: '10pt',
+                                textAlign: 'left',
                               }}
                             >
-                              {incluirCliente && etiqueta.cliente && etiqueta.cliente.cidade && etiqueta.cliente.uf && (
-                                <div>
-                                  {etiqueta.cliente.cidade} - {etiqueta.cliente.uf}
-                                </div>
+                              <div className="font-bold">{etiqueta.produto.nome}</div>
+                              {incluirCliente && etiqueta.cliente && (
+                                <div>Cliente: {etiqueta.cliente.nome}</div>
                               )}
-                              {incluirNumeroSerie && etiqueta.numeroSerie && (
-                                <div style={{ textAlign: 'right' }}>
-                                  N° Série: {etiqueta.numeroSerie}
-                                </div>
-                              )}
+                              <div
+                                style={{
+                                  display: 'flex',
+                                  justifyContent: 'space-between',
+                                  fontSize: '8pt',
+                                  marginTop: '2mm',
+                                }}
+                              >
+                                {incluirCliente && etiqueta.cliente && etiqueta.cliente.cidade && etiqueta.cliente.uf && (
+                                  <div>
+                                    {etiqueta.cliente.cidade} - {etiqueta.cliente.uf}
+                                  </div>
+                                )}
+                                {incluirNumeroSerie && etiqueta.numeroSerie && (
+                                  <div style={{ textAlign: 'right' }}>
+                                    N° Série: {etiqueta.numeroSerie}
+                                  </div>
+                                )}
+                              </div>
                             </div>
                           </div>
-                        </div>
-                      ))}
-                  </div>
+                        ))}
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-2 gap-6">
+                      {etiquetasGeradas
+                        .slice((currentPage - 1) * etiquetasPorPagina, currentPage * etiquetasPorPagina)
+                        .map((etiqueta) => (
+                          <div
+                            key={etiqueta.id}
+                            className="bg-white border border-gray-300 relative"
+                            style={{
+                              width: `${configuracoes.largura}mm`,
+                              height: `${configuracoes.altura}mm`,
+                              padding: '5mm',
+                              display: 'flex',
+                              flexDirection: 'column',
+                              justifyContent: 'space-between',
+                              position: 'relative',
+                            }}
+                          >
+                            {incluirCodigoBarras && (
+                              <div className="mt-2">
+                                <div
+                                  className="w-full h-8 flex items-end justify-center"
+                                  style={{ gap: '0.5mm' }}
+                                >
+                                  {Array.from({ length: 30 }).map((_, i) => (
+                                    <div
+                                      key={i}
+                                      className="bg-black"
+                                      style={{
+                                        width: '0.8mm',
+                                        height: `${Math.floor(Math.random() * 6) + 2}mm`,
+                                      }}
+                                    />
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+
+                            <div
+                              style={{
+                                position: 'absolute',
+                                bottom: '2mm',
+                                left: '2mm',
+                                right: '2mm',
+                                display: 'flex',
+                                flexDirection: 'column',
+                                fontSize: '10pt',
+                                textAlign: 'left',
+                              }}
+                            >
+                              <div className="font-bold">{etiqueta.produto.nome}</div>
+                              {incluirCliente && etiqueta.cliente && (
+                                <div>Cliente: {etiqueta.cliente.nome}</div>
+                              )}
+                              <div
+                                style={{
+                                  display: 'flex',
+                                  justifyContent: 'space-between',
+                                  fontSize: '8pt',
+                                  marginTop: '2mm',
+                                }}
+                              >
+                                {incluirCliente && etiqueta.cliente && etiqueta.cliente.cidade && etiqueta.cliente.uf && (
+                                  <div>
+                                    {etiqueta.cliente.cidade} - {etiqueta.cliente.uf}
+                                  </div>
+                                )}
+                                {incluirNumeroSerie && etiqueta.numeroSerie && (
+                                  <div style={{ textAlign: 'right' }}>
+                                    N° Série: {etiqueta.numeroSerie}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                    </div>
+                  )}
 
                   {/* Botões de navegação */}
                   <div className="mt-4 flex justify-center items-center gap-2">
