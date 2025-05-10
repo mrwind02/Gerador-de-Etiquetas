@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { collection, getDocs, addDoc, doc, updateDoc, deleteDoc, query, orderBy } from 'firebase/firestore'
+import { collection, getDocs, addDoc, doc as firestoreDoc, updateDoc, deleteDoc, query, orderBy, getDoc, setDoc } from 'firebase/firestore'
 import { PlusIcon, PencilSquareIcon, TrashIcon, DocumentDuplicateIcon } from '@heroicons/react/24/outline'
 import { useNavigate } from 'react-router-dom'
 
@@ -22,7 +22,18 @@ export default function ModelosEtiquetas({ db }) {
       tamanhoFonte: 10
     }
   })
-  
+
+  // Estado para dados fixos da etiqueta
+  const [dadosEtiqueta, setDadosEtiqueta] = useState({
+    nomeEmpresa: '',
+    cnpj: '',
+    inscricaoEstadual: '',
+    cidadeEstado: '',
+    website: ''
+  });
+  const [salvandoDadosEtiqueta, setSalvandoDadosEtiqueta] = useState(false);
+  const [msgDadosEtiqueta, setMsgDadosEtiqueta] = useState('');
+
   const navigate = useNavigate()
 
   // Carregar modelos do Firestore
@@ -45,6 +56,22 @@ export default function ModelosEtiquetas({ db }) {
     fetchModelos()
   }, [db])
 
+  // Carregar dados fixos da etiqueta do Firestore
+  useEffect(() => {
+    const fetchDadosEtiqueta = async () => {
+      try {
+        const docRef = firestoreDoc(db, 'configuracoes', 'dadosEtiqueta');
+        const docSnap = await getDoc(docRef);
+        if (docSnap.exists()) {
+          setDadosEtiqueta(docSnap.data());
+        }
+      } catch (error) {
+        // Silenciar erro
+      }
+    };
+    fetchDadosEtiqueta();
+  }, [db]);
+
   // Manipular mudanças no formulário
   const handleChange = (e) => {
     const { name, value } = e.target
@@ -65,6 +92,22 @@ export default function ModelosEtiquetas({ db }) {
       }
     }))
   }
+
+  // Salvar dados fixos da etiqueta no Firestore
+  const handleSalvarDadosEtiqueta = async (e) => {
+    e.preventDefault();
+    setSalvandoDadosEtiqueta(true);
+    setMsgDadosEtiqueta('');
+    try {
+      const docRef = firestoreDoc(db, 'configuracoes', 'dadosEtiqueta');
+      await setDoc(docRef, dadosEtiqueta);
+      setMsgDadosEtiqueta('Dados salvos com sucesso!');
+    } catch (error) {
+      setMsgDadosEtiqueta('Erro ao salvar dados.');
+    }
+    setSalvandoDadosEtiqueta(false);
+    setTimeout(() => setMsgDadosEtiqueta(''), 2000);
+  };
 
   // Abrir modal para adicionar modelo
   const handleAddClick = () => {
@@ -116,17 +159,13 @@ export default function ModelosEtiquetas({ db }) {
   // Salvar modelo (adicionar ou atualizar)
   const handleSubmit = async (e) => {
     e.preventDefault()
-    
     try {
       if (formMode === 'add') {
-        // Adicionar novo modelo
         await addDoc(collection(db, 'modelos'), formData)
       } else {
-        // Atualizar modelo existente
-        const modeloRef = doc(db, 'modelos', currentModelo.id)
+        const modeloRef = firestoreDoc(db, 'modelos', currentModelo.id)
         await updateDoc(modeloRef, formData)
       }
-      
       // Recarregar a lista de modelos
       const modelosRef = collection(db, 'modelos')
       const q = query(modelosRef, orderBy('nome'))
@@ -136,8 +175,6 @@ export default function ModelosEtiquetas({ db }) {
         ...doc.data()
       }))
       setModelos(modelosList)
-      
-      // Fechar o modal
       setIsModalOpen(false)
     } catch (error) {
       console.error('Erro ao salvar modelo:', error)
@@ -148,7 +185,7 @@ export default function ModelosEtiquetas({ db }) {
   const handleDelete = async (id) => {
     if (window.confirm('Tem certeza que deseja excluir este modelo?')) {
       try {
-        await deleteDoc(doc(db, 'modelos', id))
+        await deleteDoc(firestoreDoc(db, 'modelos', id))
         setModelos(modelos.filter(modelo => modelo.id !== id))
       } catch (error) {
         console.error('Erro ao excluir modelo:', error)
@@ -157,116 +194,186 @@ export default function ModelosEtiquetas({ db }) {
   }
 
   return (
-    <div className="bg-white py-6">
-      <div className="mx-auto max-w-7xl">
-        <div className="px-4 sm:px-6 lg:px-8">
-          <div className="sm:flex sm:items-center">
-            <div className="sm:flex-auto">
-              <h1 className="text-2xl font-semibold leading-6 text-gray-900">Modelos de Etiquetas</h1>
-              <p className="mt-2 text-sm text-gray-700">
-                Salve e reutilize diferentes configurações de etiquetas para agilizar seu trabalho.
-              </p>
-            </div>
-            <div className="mt-4 sm:ml-16 sm:mt-0 sm:flex-none">
-              <button
-                type="button"
-                onClick={handleAddClick}
-                className="block rounded-md bg-indigo-600 px-3 py-2 text-center text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600"
-              >
-                <PlusIcon className="h-5 w-5 inline-block mr-1" />
-                Novo Modelo
-              </button>
-            </div>
-          </div>
-          
-          {/* Lista de modelos */}
-          <div className="mt-8 flow-root">
-            {modelos.length > 0 ? (
-              <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
-                {modelos.map((modelo) => (
-                  <div key={modelo.id} className="bg-white overflow-hidden shadow rounded-lg border border-gray-200">
-                    <div className="px-4 py-5 sm:p-6">
-                      <h3 className="text-lg font-medium text-gray-900 truncate">{modelo.nome}</h3>
-                      <p className="mt-1 text-sm text-gray-500">{modelo.descricao}</p>
-                      
-                      <div className="mt-4 border-t border-gray-200 pt-4">
-                        <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
-                          <div>
-                            <dt className="text-gray-500">Tamanho</dt>
-                            <dd className="font-medium text-gray-900">
-                              {modelo.configuracoes?.largura || 90} x {modelo.configuracoes?.altura || 40} mm
-                            </dd>
-                          </div>
-                          <div>
-                            <dt className="text-gray-500">Qtd. por página</dt>
-                            <dd className="font-medium text-gray-900">
-                              {modelo.configuracoes?.quantidadePorPagina || 10}
-                            </dd>
-                          </div>
-                          <div>
-                            <dt className="text-gray-500">Margens</dt>
-                            <dd className="font-medium text-gray-900">
-                              {modelo.configuracoes?.margemSuperior || 5}/{modelo.configuracoes?.margemInferior || 5}/{modelo.configuracoes?.margemEsquerda || 5}/{modelo.configuracoes?.margemDireita || 5} mm
-                            </dd>
-                          </div>
-                          <div>
-                            <dt className="text-gray-500">Tamanho da fonte</dt>
-                            <dd className="font-medium text-gray-900">
-                              {modelo.configuracoes?.tamanhoFonte || 10}pt
-                            </dd>
-                          </div>
-                        </dl>
-                      </div>
-                    </div>
-                    <div className="bg-gray-50 px-4 py-4 sm:px-6 flex justify-between">
-                      <button
-                        onClick={() => handleUseModelo(modelo)}
-                        className="text-indigo-600 hover:text-indigo-900 font-medium text-sm flex items-center"
-                      >
-                        <DocumentDuplicateIcon className="h-5 w-5 mr-1" />
-                        Usar modelo
-                      </button>
-                      <div>
-                        <button
-                          onClick={() => handleEditClick(modelo)}
-                          className="text-indigo-600 hover:text-indigo-900 mr-4"
-                        >
-                          <PencilSquareIcon className="h-5 w-5" />
-                          <span className="sr-only">Editar</span>
-                        </button>
-                        <button
-                          onClick={() => handleDelete(modelo.id)}
-                          className="text-red-600 hover:text-red-900"
-                        >
-                          <TrashIcon className="h-5 w-5" />
-                          <span className="sr-only">Excluir</span>
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                ))}
+    <>
+      <div className="bg-white py-6">
+        <div className="mx-auto max-w-7xl">
+          <div className="px-4 sm:px-6 lg:px-8">
+            <div className="sm:flex sm:items-center">
+              <div className="sm:flex-auto">
+                <h1 className="text-2xl font-semibold leading-6 text-gray-900">Modelos de Etiquetas</h1>
+                <p className="mt-2 text-sm text-gray-700">
+                  Salve e reutilize diferentes configurações de etiquetas para agilizar seu trabalho.
+                </p>
               </div>
-            ) : (
-              <div className="text-center py-10 bg-gray-50 rounded-lg">
-                <DocumentDuplicateIcon className="mx-auto h-12 w-12 text-gray-400" />
-                <h3 className="mt-2 text-sm font-medium text-gray-900">Nenhum modelo</h3>
-                <p className="mt-1 text-sm text-gray-500">Crie seu primeiro modelo de etiqueta para começar.</p>
-                <div className="mt-6">
-                  <button
-                    type="button"
-                    onClick={handleAddClick}
-                    className="inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600"
-                  >
-                    <PlusIcon className="-ml-0.5 mr-1.5 h-5 w-5" aria-hidden="true" />
-                    Novo Modelo
-                  </button>
+              <div className="mt-4 sm:ml-16 sm:mt-0 sm:flex-none">
+                <button
+                  type="button"
+                  onClick={handleAddClick}
+                  className="block rounded-md bg-indigo-600 px-3 py-2 text-center text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600"
+                >
+                  <PlusIcon className="h-5 w-5 inline-block mr-1" />
+                  Novo Modelo
+                </button>
+              </div>
+            </div>
+            
+            {/* Lista de modelos */}
+            <div className="mt-8 flow-root">
+              {modelos.length > 0 ? (
+                <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+                  {modelos.map((modelo) => (
+                    <div key={modelo.id} className="bg-white overflow-hidden shadow rounded-lg border border-gray-200">
+                      <div className="px-4 py-5 sm:p-6">
+                        <h3 className="text-lg font-medium text-gray-900 truncate">{modelo.nome}</h3>
+                        <p className="mt-1 text-sm text-gray-500">{modelo.descricao}</p>
+                        
+                        <div className="mt-4 border-t border-gray-200 pt-4">
+                          <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+                            <div>
+                              <dt className="text-gray-500">Tamanho</dt>
+                              <dd className="font-medium text-gray-900">
+                                {modelo.configuracoes?.largura || 90} x {modelo.configuracoes?.altura || 40} mm
+                              </dd>
+                            </div>
+                            <div>
+                              <dt className="text-gray-500">Qtd. por página</dt>
+                              <dd className="font-medium text-gray-900">
+                                {modelo.configuracoes?.quantidadePorPagina || 10}
+                              </dd>
+                            </div>
+                            <div>
+                              <dt className="text-gray-500">Margens</dt>
+                              <dd className="font-medium text-gray-900">
+                                {modelo.configuracoes?.margemSuperior || 5}/{modelo.configuracoes?.margemInferior || 5}/{modelo.configuracoes?.margemEsquerda || 5}/{modelo.configuracoes?.margemDireita || 5} mm
+                              </dd>
+                            </div>
+                            <div>
+                              <dt className="text-gray-500">Tamanho da fonte</dt>
+                              <dd className="font-medium text-gray-900">
+                                {modelo.configuracoes?.tamanhoFonte || 10}pt
+                              </dd>
+                            </div>
+                          </dl>
+                        </div>
+                      </div>
+                      <div className="bg-gray-50 px-4 py-4 sm:px-6 flex justify-between">
+                        <button
+                          onClick={() => handleUseModelo(modelo)}
+                          className="text-indigo-600 hover:text-indigo-900 font-medium text-sm flex items-center"
+                        >
+                          <DocumentDuplicateIcon className="h-5 w-5 mr-1" />
+                          Usar modelo
+                        </button>
+                        <div>
+                          <button
+                            onClick={() => handleEditClick(modelo)}
+                            className="text-indigo-600 hover:text-indigo-900 mr-4"
+                          >
+                            <PencilSquareIcon className="h-5 w-5" />
+                            <span className="sr-only">Editar</span>
+                          </button>
+                          <button
+                            onClick={() => handleDelete(modelo.id)}
+                            className="text-red-600 hover:text-red-900"
+                          >
+                            <TrashIcon className="h-5 w-5" />
+                            <span className="sr-only">Excluir</span>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
                 </div>
-              </div>
-            )}
+              ) : (
+                <div className="text-center py-10 bg-gray-50 rounded-lg">
+                  <DocumentDuplicateIcon className="mx-auto h-12 w-12 text-gray-400" />
+                  <h3 className="mt-2 text-sm font-medium text-gray-900">Nenhum modelo</h3>
+                  <p className="mt-1 text-sm text-gray-500">Crie seu primeiro modelo de etiqueta para começar.</p>
+                  <div className="mt-6">
+                    <button
+                      type="button"
+                      onClick={handleAddClick}
+                      className="inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600"
+                    >
+                      <PlusIcon className="-ml-0.5 mr-1.5 h-5 w-5" aria-hidden="true" />
+                      Novo Modelo
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Configuração dos dados fixos da etiqueta */}
+            <div className="mt-10 w-full bg-gray-50 rounded-lg p-6 border border-gray-200 max-w-full sm:max-w-none">
+              <h2 className="text-lg font-semibold text-gray-900 mb-4">Dados Fixos da Etiqueta</h2>
+              <form onSubmit={handleSalvarDadosEtiqueta} className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">Nome da empresa</label>
+                  <input
+                    type="text"
+                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                    value={dadosEtiqueta.nomeEmpresa}
+                    onChange={e => setDadosEtiqueta(d => ({ ...d, nomeEmpresa: e.target.value }))}
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">CNPJ</label>
+                  <input
+                    type="text"
+                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                    value={dadosEtiqueta.cnpj}
+                    onChange={e => setDadosEtiqueta(d => ({ ...d, cnpj: e.target.value }))}
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">Inscrição Estadual</label>
+                  <input
+                    type="text"
+                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                    value={dadosEtiqueta.inscricaoEstadual}
+                    onChange={e => setDadosEtiqueta(d => ({ ...d, inscricaoEstadual: e.target.value }))}
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">Cidade/Estado</label>
+                  <input
+                    type="text"
+                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                    value={dadosEtiqueta.cidadeEstado}
+                    onChange={e => setDadosEtiqueta(d => ({ ...d, cidadeEstado: e.target.value }))}
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">Website</label>
+                  <input
+                    type="text"
+                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                    value={dadosEtiqueta.website}
+                    onChange={e => setDadosEtiqueta(d => ({ ...d, website: e.target.value }))}
+                    required
+                  />
+                </div>
+                <div className="flex items-center gap-4">
+                  <button
+                    type="submit"
+                    disabled={salvandoDadosEtiqueta}
+                    className="inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500"
+                  >
+                    {salvandoDadosEtiqueta ? 'Salvando...' : 'Salvar'}
+                  </button>
+                  {msgDadosEtiqueta && (
+                    <span className="text-sm text-gray-600">{msgDadosEtiqueta}</span>
+                  )}
+                </div>
+              </form>
+            </div>
           </div>
         </div>
       </div>
-
       {/* Modal de formulário */}
       {isModalOpen && (
         <div className="fixed inset-0 bg-gray-500 bg-opacity-75 flex items-center justify-center p-4 z-50">
@@ -461,6 +568,6 @@ export default function ModelosEtiquetas({ db }) {
           </div>
         </div>
       )}
-    </div>
+    </>
   )
 }

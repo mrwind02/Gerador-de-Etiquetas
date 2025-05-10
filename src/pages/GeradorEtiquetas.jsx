@@ -64,6 +64,15 @@ export default function GeradorEtiquetas({ db }) {
   const [buscaClienteTermo, setBuscaClienteTermo] = useState('');
   const [buscaClienteResultados, setBuscaClienteResultados] = useState([]);
 
+  // Estado para dados fixos da etiqueta
+  const [dadosEtiqueta, setDadosEtiqueta] = useState({
+    nomeEmpresa: '',
+    cnpj: '',
+    inscricaoEstadual: '',
+    cidadeEstado: '',
+    website: ''
+  });
+
   // Atualizar resultados da busca de produto
   useEffect(() => {
     if (showBuscaProdutoModal && buscaProdutoTermo.length > 0) {
@@ -251,6 +260,22 @@ export default function GeradorEtiquetas({ db }) {
     };
 
     fetchLogomarca();
+  }, [db]);
+
+  // Carregar dados fixos da etiqueta do Firestore
+  useEffect(() => {
+    const fetchDadosEtiqueta = async () => {
+      try {
+        const docRef = doc(db, 'configuracoes', 'dadosEtiqueta');
+        const docSnap = await getDoc(docRef);
+        if (docSnap.exists()) {
+          setDadosEtiqueta(docSnap.data());
+        }
+      } catch (error) {
+        // Silenciar erro
+      }
+    };
+    fetchDadosEtiqueta();
   }, [db]);
 
   // Carregar dados do Firestore
@@ -513,7 +538,8 @@ export default function GeradorEtiquetas({ db }) {
     } = configuracoes;
 
     const isModeloGrande = largura > 100;
-    const margemEsquerda = 4;
+    // Para modelo grande, margem esquerda 5mm; padrão mantém 4mm
+    const margemEsquerda = isModeloGrande ? 5 : 4;
     const margemSuperior = 5;
     const margemEntreColunas = 6;
     const margemEntreLinhas = 3;
@@ -569,33 +595,53 @@ export default function GeradorEtiquetas({ db }) {
         doc.text('ENTREGA', textoX, campoOrdemY + 11); // Linha inferior (ajustada para uma linha abaixo)
       }
 
-      // Adicionar texto "www.moveisamazonia.com.br" no canto superior direito, uma linha abaixo
+      // Adicionar texto do website no canto superior direito, uma linha abaixo
       const textoSiteX = x + largura - 2; // Margem mínima de 2mm do lado direito
-      const textoSiteY = y + 4; // Uma linha abaixo (2mm adicional)
+      // Para modelo grande, 1mm abaixo da posição atual
+      const textoSiteY = isModeloGrande ? y + 5 : y + 4;
       doc.setFont('helvetica', 'normal'); // Fonte normal
-      doc.setFontSize(6); // Fonte ajustada para tamanho 6
-      doc.text('www.moveisamazonia.com.br', textoSiteX, textoSiteY, { align: 'right' }); // Alinhar à direita
+      doc.setFontSize(isModeloGrande ? 10 : 6); // Fonte 10 para modelo grande, 6 para padrão
+      doc.text(dadosEtiqueta.website || '', textoSiteX, textoSiteY, { align: 'right' }); // Alinhar à direita
 
-      // Adicionar texto "MÓVEIS AMAZÔNIA LTDA" no canto superior esquerdo
+      // Adicionar texto do nome da empresa no canto superior esquerdo
       const textoEmpresaX = x + 2; // Respeitar 4mm de margem esquerda - 2mm
-      const textoEmpresaY = y + 6; // Respeitar 4mm de margem superior + 2mm adicionais
+      // Para modelo grande, 3mm abaixo da posição atual (y + 6 + 3 = y + 9), fonte 20; padrão mantém y+6 e fonte 13
+      const textoEmpresaY = isModeloGrande ? y + 9 : y + 6;
       doc.setFont('helvetica', 'bold'); // Fonte em negrito
-      doc.setFontSize(13); // Tamanho da fonte ajustado para 13
-      doc.text('MÓVEIS AMAZÔNIA LTDA', textoEmpresaX, textoEmpresaY, { align: 'left' }); // Alinhar à esquerda
+      doc.setFontSize(isModeloGrande ? 20 : 13); // Fonte 20 para modelo grande, 13 para padrão
+      doc.text(dadosEtiqueta.nomeEmpresa || '', textoEmpresaX, textoEmpresaY, { align: 'left' }); // Alinhar à esquerda
 
-      // Adicionar texto "CNPJ: 15.692.362/0001-68 Inscrição Estadual: 13.457.068-5" com espaçamento de 1mm
+      // Adicionar texto "CNPJ: {CNPJ} IE: {IE}" uma linha abaixo do nome da empresa com espaçamento mínimo no modelo grande
       const textoCnpjX = textoEmpresaX;
-      const textoCnpjY = textoEmpresaY + 3; // Espaçamento de 1mm
-      doc.setFontSize(6); // Fonte ajustada para 6
-      doc.setFont('helvetica', 'normal'); // Fonte normal
-      doc.text('CNPJ: 15.692.362/0001-68 Inscrição Estadual: 13.457.068-5', textoCnpjX, textoCnpjY, { align: 'left' });
+      let textoCnpjY;
+      if (isModeloGrande) {
+        // Para modelo grande, uma linha abaixo do nome da empresa (y + 9 + 4 = y + 13)
+        textoCnpjY = textoEmpresaY + 4;
+      } else {
+        // Padrão: linha abaixo do nome da empresa
+        textoCnpjY = textoEmpresaY + 3;
+      }
+      doc.setFontSize(isModeloGrande ? 10 : 6);
+      doc.setFont('helvetica', 'normal');
+      doc.text(
+        `CNPJ: ${dadosEtiqueta.cnpj || ''} IE: ${dadosEtiqueta.inscricaoEstadual || ''}`,
+        textoCnpjX,
+        textoCnpjY,
+        { align: 'left' }
+      );
 
-      // Adicionar texto "ALTA FLORESTA - MT" com espaçamento de 1mm
-      const textoLocalX = textoCnpjX;
-      const textoLocalY = textoCnpjY + 3; // Espaçamento de 1mm
-      doc.setFontSize(7); // Fonte ajustada para 7
-      doc.setFont('helvetica', 'normal'); // Fonte normal
-      doc.text('ALTA FLORESTA - MT', textoLocalX, textoLocalY, { align: 'left' });
+      // Adicionar cidade/estado na linha abaixo do CNPJ/IE
+      const textoCidadeEstadoX = textoEmpresaX;
+      // Para modelo grande, cidade/estado uma linha abaixo do CNPJ/IE (espaçamento mínimo: +4mm)
+      const textoCidadeEstadoY = isModeloGrande ? textoCnpjY + 4 : textoCnpjY + 3;
+      doc.setFontSize(isModeloGrande ? 12 : 7);
+      doc.setFont('helvetica', 'normal');
+      doc.text(
+        dadosEtiqueta.cidadeEstado || '',
+        textoCidadeEstadoX,
+        textoCidadeEstadoY,
+        { align: 'left' }
+      );
 
       // Adicionar logomarca como marca d'água com opacidade ajustada
       if (logomarca) {
@@ -713,7 +759,8 @@ export default function GeradorEtiquetas({ db }) {
     } = configuracoes;
 
     const isModeloGrande = largura > 100;
-    const margemEsquerda = 4;
+    // Para modelo grande, margem esquerda 5mm; padrão mantém 4mm
+    const margemEsquerda = isModeloGrande ? 5 : 4;
     const margemSuperior = 5;
     const margemEntreColunas = 6;
     const margemEntreLinhas = 3;
@@ -769,33 +816,53 @@ export default function GeradorEtiquetas({ db }) {
         doc.text('ENTREGA', textoX, campoOrdemY + 11); // Linha inferior (ajustada para uma linha abaixo)
       }
 
-      // Adicionar texto "www.moveisamazonia.com.br" no canto superior direito, uma linha abaixo
+      // Adicionar texto do website no canto superior direito, uma linha abaixo
       const textoSiteX = x + largura - 2; // Margem mínima de 2mm do lado direito
-      const textoSiteY = y + 4; // Uma linha abaixo (2mm adicional)
+      // Para modelo grande, 1mm abaixo da posição atual
+      const textoSiteY = isModeloGrande ? y + 5 : y + 4;
       doc.setFont('helvetica', 'normal'); // Fonte normal
-      doc.setFontSize(6); // Fonte ajustada para tamanho 6
-      doc.text('www.moveisamazonia.com.br', textoSiteX, textoSiteY, { align: 'right' }); // Alinhar à direita
+      doc.setFontSize(isModeloGrande ? 10 : 6); // Fonte 10 para modelo grande, 6 para padrão
+      doc.text(dadosEtiqueta.website || '', textoSiteX, textoSiteY, { align: 'right' }); // Alinhar à direita
 
-      // Adicionar texto "MÓVEIS AMAZÔNIA LTDA" no canto superior esquerdo
+      // Adicionar texto do nome da empresa no canto superior esquerdo
       const textoEmpresaX = x + 2; // Respeitar 4mm de margem esquerda - 2mm
-      const textoEmpresaY = y + 6; // Respeitar 4mm de margem superior + 2mm adicionais
+      // Para modelo grande, 3mm abaixo da posição atual (y + 6 + 3 = y + 9), fonte 20; padrão mantém y+6 e fonte 13
+      const textoEmpresaY = isModeloGrande ? y + 9 : y + 6;
       doc.setFont('helvetica', 'bold'); // Fonte em negrito
-      doc.setFontSize(13); // Tamanho da fonte ajustado para 13
-      doc.text('MÓVEIS AMAZÔNIA LTDA', textoEmpresaX, textoEmpresaY, { align: 'left' }); // Alinhar à esquerda
+      doc.setFontSize(isModeloGrande ? 20 : 13); // Fonte 20 para modelo grande, 13 para padrão
+      doc.text(dadosEtiqueta.nomeEmpresa || '', textoEmpresaX, textoEmpresaY, { align: 'left' }); // Alinhar à esquerda
 
-      // Adicionar texto "CNPJ: 15.692.362/0001-68 Inscrição Estadual: 13.457.068-5" com espaçamento de 1mm
+      // Adicionar texto "CNPJ: {CNPJ} IE: {IE}" uma linha abaixo do nome da empresa com espaçamento mínimo no modelo grande
       const textoCnpjX = textoEmpresaX;
-      const textoCnpjY = textoEmpresaY + 3; // Espaçamento de 1mm
-      doc.setFontSize(6); // Fonte ajustada para 6
-      doc.setFont('helvetica', 'normal'); // Fonte normal
-      doc.text('CNPJ: 15.692.362/0001-68 Inscrição Estadual: 13.457.068-5', textoCnpjX, textoCnpjY, { align: 'left' });
+      let textoCnpjY;
+      if (isModeloGrande) {
+        // Para modelo grande, uma linha abaixo do nome da empresa (y + 9 + 4 = y + 13)
+        textoCnpjY = textoEmpresaY + 4;
+      } else {
+        // Padrão: linha abaixo do nome da empresa
+        textoCnpjY = textoEmpresaY + 3;
+      }
+      doc.setFontSize(isModeloGrande ? 10 : 6);
+      doc.setFont('helvetica', 'normal');
+      doc.text(
+        `CNPJ: ${dadosEtiqueta.cnpj || ''} IE: ${dadosEtiqueta.inscricaoEstadual || ''}`,
+        textoCnpjX,
+        textoCnpjY,
+        { align: 'left' }
+      );
 
-      // Adicionar texto "ALTA FLORESTA - MT" com espaçamento de 1mm
-      const textoLocalX = textoCnpjX;
-      const textoLocalY = textoCnpjY + 3; // Espaçamento de 1mm
-      doc.setFontSize(7); // Fonte ajustada para 7
-      doc.setFont('helvetica', 'normal'); // Fonte normal
-      doc.text('ALTA FLORESTA - MT', textoLocalX, textoLocalY, { align: 'left' });
+      // Adicionar cidade/estado na linha abaixo do CNPJ/IE
+      const textoCidadeEstadoX = textoEmpresaX;
+      // Para modelo grande, cidade/estado uma linha abaixo do CNPJ/IE (espaçamento mínimo: +4mm)
+      const textoCidadeEstadoY = isModeloGrande ? textoCnpjY + 4 : textoCnpjY + 3;
+      doc.setFontSize(isModeloGrande ? 12 : 7);
+      doc.setFont('helvetica', 'normal');
+      doc.text(
+        dadosEtiqueta.cidadeEstado || '',
+        textoCidadeEstadoX,
+        textoCidadeEstadoY,
+        { align: 'left' }
+      );
 
       // Adicionar logomarca como marca d'água com opacidade ajustada
       if (logomarca) {
@@ -1742,9 +1809,7 @@ export default function GeradorEtiquetas({ db }) {
                     >
                       <span>
                         {cliente.nome}
-                        <span className="text-gray-400 ml-2 text-xs">
-                          {cliente.codigo ? `(${cliente.codigo})` : ''}
-                        </span>
+                        <span className="text-gray-400 ml-2 text-xs">({cliente.codigo})</span>
                       </span>
                       <span className="text-xs text-gray-500">Selecionar</span>
                     </li>
@@ -1756,5 +1821,5 @@ export default function GeradorEtiquetas({ db }) {
         </div>
       )}
     </div>
-  )
+  );
 }
