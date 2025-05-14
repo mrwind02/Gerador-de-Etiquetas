@@ -198,35 +198,44 @@ export default function GeradorEtiquetas({ db }) {
       return;
     }
 
+    // Buscar pelo id do tipo em edição, não apenas pelo nome
     const tipoProdutoExistente = tiposProdutos.find(
-      (tipo) => tipo.nome.toLowerCase() === novoTipoProduto.trim().toLowerCase()
-    );
+      (tipo) =>
+        (tipo.nome.toLowerCase() === novoTipoProduto.trim().toLowerCase()) ||
+        (tipo.nome === novoTipoProduto.trim()) ||
+        (tipo.id && tipo.id === (tiposProdutos.find(t => t.nome === novoTipoProduto)?.id))
+    ) || tiposProdutos.find(t => t.nome === novoTipoProduto);
 
-    if (!tipoProdutoExistente) {
+    // Se não encontrar pelo nome, mas estamos em modo de edição, tente pelo id do tipo em edição
+    let tipoParaAtualizar = tipoProdutoExistente;
+    if (!tipoParaAtualizar && formMode === 'edit') {
+      // Procura pelo id do tipo em edição (caso o nome tenha sido alterado)
+      tipoParaAtualizar = tiposProdutos.find(t => t.nome === novoTipoProduto) || tiposProdutos[0];
+    }
+
+    if (!tipoParaAtualizar) {
       alert('Tipo de produto não encontrado para edição.');
       return;
     }
 
     try {
-      const tipoProdutoRef = doc(db, 'tiposProdutos', tipoProdutoExistente.id);
+      const tipoProdutoRef = doc(db, 'tiposProdutos', tipoParaAtualizar.id);
       await setDoc(tipoProdutoRef, {
         nome: novoTipoProduto.trim(),
         quantidade: novaQuantidade,
       });
 
-      // Atualizar a lista local de tipos de produtos
       setTiposProdutos((prev) =>
         prev.map((tipo) =>
-          tipo.id === tipoProdutoExistente.id
+          tipo.id === tipoParaAtualizar.id
             ? { ...tipo, nome: novoTipoProduto.trim(), quantidade: novaQuantidade }
             : tipo
         )
       );
 
-      // Limpar os campos do formulário e redefinir o modo
       setNovoTipoProduto('');
       setNovaQuantidade(1);
-      setFormMode('add'); // Voltar para o modo de adição
+      setFormMode('add');
     } catch (error) {
       console.error('Erro ao atualizar tipo de produto:', error);
     }
@@ -466,61 +475,86 @@ export default function GeradorEtiquetas({ db }) {
     }
   
     const etiquetas = [];
-    let totalEtiquetas = 0; // Variável para somar o total de etiquetas geradas
-  
+    let totalEtiquetas = 0;
+
     selectedProdutos.forEach((produto) => {
       const nomeProduto = produto.nome.toLowerCase();
-      const palavrasProduto = nomeProduto.split(' ').slice(0, 2); // Considerar as duas primeiras palavras do produto
-  
-      // Buscar o tipo de produto na tabela com base nas duas primeiras palavras
-      let tipoProduto = tiposProdutos.find((tipo) => {
-        const palavrasChave = tipo.nome.toLowerCase().split(' ').slice(0, 2); // Duas primeiras palavras do tipo
-        return palavrasChave.length === palavrasProduto.length && palavrasChave.every((palavra, index) => palavra === palavrasProduto[index]); // Verificar correspondência exata das duas palavras
+      const palavrasProduto = nomeProduto.split(' ');
+
+      // Separar palavras (letras) e números do nome do produto
+      let palavrasLetras = [];
+      let numeros = [];
+      palavrasProduto.forEach((palavra) => {
+        if (/^[a-zA-Zá-úÁ-ÚãõÃÕçÇ]+$/.test(palavra)) {
+          palavrasLetras.push(palavra);
+        } else if (!isNaN(Number(palavra)) && palavra.trim() !== '') {
+          numeros.push(Number(palavra));
+        }
       });
-  
-      // Caso não encontre com as duas palavras, buscar com a primeira palavra
-      if (!tipoProduto) {
-        tipoProduto = tiposProdutos.find((tipo) => {
-          const primeiraPalavra = tipo.nome.toLowerCase().split(' ')[0]; // Primeira palavra do tipo
-          return palavrasProduto[0] === primeiraPalavra; // Verificar correspondência exata da primeira palavra
-        });
+
+      // Gerar todas as combinações possíveis de palavras e números do nome do produto
+      // Exemplo: "Mesa 2 lugares" => ["mesa 2 lugares", "mesa lugares", "mesa 2", "mesa", "2 lugares", "lugares", ...]
+      function gerarCombinacoes(arr) {
+        const results = [];
+        const n = arr.length;
+        for (let len = n; len >= 1; len--) {
+          for (let i = 0; i <= n - len; i++) {
+            results.push(arr.slice(i, i + len).join(' '));
+          }
+        }
+        return results;
       }
-  
+      const todasCombinacoes = gerarCombinacoes(palavrasProduto);
+
+      // Buscar tipo de produto pela combinação mais específica possível
+      let tipoProduto = null;
+      let quantidadeTipo = null;
+      for (let comb of todasCombinacoes) {
+        tipoProduto = tiposProdutos.find((tipo) => tipo.nome.toLowerCase() === comb.trim());
+        if (tipoProduto) {
+          quantidadeTipo = tipoProduto.quantidade;
+          break;
+        }
+      }
+
+      // Se não encontrou, buscar por apenas a primeira palavra
+      if (!tipoProduto && palavrasLetras.length > 0) {
+        tipoProduto = tiposProdutos.find((tipo) => tipo.nome.toLowerCase().split(' ')[0] === palavrasLetras[0]);
+        if (tipoProduto) {
+          quantidadeTipo = tipoProduto.quantidade;
+        }
+      }
+
       if (!tipoProduto) {
         console.warn(`Tipo de produto não encontrado para o produto: ${produto.nome}`);
       }
-  
-      // Determinar a quantidade de etiquetas por unidade do produto
-      const etiquetasPorUnidade = tipoProduto ? tipoProduto.quantidade : 1;
-  
-      // Determinar a quantidade total de etiquetas para este produto
-      const quantidadeInformada = produto.quantidade || 1; // Usar quantidade fixa do produto
+
+      const etiquetasPorUnidade = quantidadeTipo || 1;
+      const quantidadeInformada = produto.quantidade || 1;
       const quantidadeTotalEtiquetas = etiquetasPorUnidade * quantidadeInformada;
-  
-      // Adicionar etiquetas para este produto
+
       for (let i = 0; i < quantidadeTotalEtiquetas; i++) {
         etiquetas.push({
           id: uuidv4(),
-          produto: { ...produto }, // Garantir que a quantidade do produto não seja alterada
+          produto: { ...produto },
           cliente: incluirCliente
             ? {
                 ...selectedCliente,
-                cidade: selectedCliente.cidade || 'Cidade não informada', // Garantir que a cidade esteja presente
-                uf: selectedCliente.uf || 'UF', // Alterar estado para uf
+                cidade: selectedCliente.cidade || 'Cidade não informada',
+                uf: selectedCliente.uf || 'UF',
               }
             : null,
           data: incluirData ? new Date().toLocaleDateString('pt-BR') : null,
           numeroSerie: incluirNumeroSerie ? `${produto.sku}-${String(i + 1).padStart(3, '0')}` : null,
-          ordemEntrega: i + 1, // Adicionar número de ordem de entrega
-          tamanhoFonteNomeProduto: configuracoes.largura > 100 ? 28 : configuracoes.tamanhoFonte, // Fonte grande para etiquetas maiores
+          ordemEntrega: i + 1,
+          tamanhoFonteNomeProduto: configuracoes.largura > 100 ? 28 : configuracoes.tamanhoFonte,
         });
       }
-  
-      // Somar ao total de etiquetas geradas
+
       totalEtiquetas += quantidadeTotalEtiquetas;
     });
-  
-    console.log(`Total de etiquetas geradas: ${totalEtiquetas}`); // Log do total de etiquetas geradas
+
+    console.log(`Total de etiquetas geradas: ${totalEtiquetas}`);
     setEtiquetasGeradas(etiquetas);
     setNumPages(Math.ceil(etiquetas.length / configuracoes.quantidadePorPagina));
     setShowPreview(true);
@@ -538,8 +572,7 @@ export default function GeradorEtiquetas({ db }) {
     } = configuracoes;
 
     const isModeloGrande = largura > 100;
-    // Para modelo grande, margem esquerda 5mm; padrão mantém 4mm
-    const margemEsquerda = isModeloGrande ? 5 : 4;
+    const margemEsquerda = isModeloGrande ? 7.5 : 6; // 0.75cm (7.5mm) para grande, 6mm para padrão
     const margemSuperior = 5;
     const margemEntreColunas = 6;
     const margemEntreLinhas = 3;
@@ -568,136 +601,145 @@ export default function GeradorEtiquetas({ db }) {
       const x = margemEsquerda + coluna * (largura + margemEntreColunas);
       const y = margemSuperior + linha * (altura + margemEntreLinhas);
 
-      // Adicionar campo de ordem de entrega no canto superior direito, se habilitado
-      if (incluirOrdemEntrega) {
-        const campoOrdemX = x + largura - 18; // Posicionar a 4mm da margem direita
-        const campoOrdemY = y + 2; // Respeitar 2mm de margem superior
-        const campoOrdemTamanho = 14; // 1.4cm = 14mm
-
-        // Removida a borda do quadrado
-
-        // Adicionar número de ordem de entrega centralizado no quadrado
-        doc.setFont('helvetica', 'bold'); // Fonte em negrito
-        const fontSize = 26; // Alterar tamanho da fonte para 26
-        doc.setFontSize(fontSize);
-
-        const textoOrdem = String(ordemEntregaTexto || etiqueta.ordemEntrega || '');
-        const textX = campoOrdemX + campoOrdemTamanho / 2; // Centralizar horizontalmente
-        const textY = campoOrdemY + campoOrdemTamanho / 2 + fontSize * 0.35 / 2; // Centralizar verticalmente
-
-        doc.text(textoOrdem, textX, textY, { align: 'center' });
-
-        // Adicionar texto "ORDEM DE ENTREGA" ao lado esquerdo do quadrado
-        doc.setFontSize(6);
-        doc.setFont('helvetica', 'bold');
-        const textoX = campoOrdemX - 12; // Posicionar ao lado esquerdo do quadrado
-        doc.text('ORDEM DE', textoX, campoOrdemY + 7); // Linha superior (ajustada para uma linha abaixo)
-        doc.text('ENTREGA', textoX, campoOrdemY + 11); // Linha inferior (ajustada para uma linha abaixo)
-      }
-
-      // Adicionar texto do website no canto superior direito, uma linha abaixo
-      const textoSiteX = x + largura - 2; // Margem mínima de 2mm do lado direito
-      // Para modelo grande, 1mm abaixo da posição atual
-      const textoSiteY = isModeloGrande ? y + 5 : y + 4;
-      doc.setFont('helvetica', 'normal'); // Fonte normal
-      doc.setFontSize(isModeloGrande ? 10 : 6); // Fonte 10 para modelo grande, 6 para padrão
-      doc.text(dadosEtiqueta.website || '', textoSiteX, textoSiteY, { align: 'right' }); // Alinhar à direita
-
-      // Adicionar texto do nome da empresa no canto superior esquerdo
-      const textoEmpresaX = x + 2; // Respeitar 4mm de margem esquerda - 2mm
-      // Para modelo grande, 3mm abaixo da posição atual (y + 6 + 3 = y + 9), fonte 20; padrão mantém y+6 e fonte 13
-      const textoEmpresaY = isModeloGrande ? y + 9 : y + 6;
-      doc.setFont('helvetica', 'bold'); // Fonte em negrito
-      doc.setFontSize(isModeloGrande ? 20 : 13); // Fonte 20 para modelo grande, 13 para padrão
-      doc.text(dadosEtiqueta.nomeEmpresa || '', textoEmpresaX, textoEmpresaY, { align: 'left' }); // Alinhar à esquerda
-
-      // Adicionar texto "CNPJ: {CNPJ} IE: {IE}" uma linha abaixo do nome da empresa com espaçamento mínimo no modelo grande
-      const textoCnpjX = textoEmpresaX;
-      let textoCnpjY;
+      let logoBoxWidth, logoBoxHeight, logoBoxX, logoBoxY;
       if (isModeloGrande) {
-        // Para modelo grande, uma linha abaixo do nome da empresa (y + 9 + 4 = y + 13)
-        textoCnpjY = textoEmpresaY + 4;
+        logoBoxWidth = 110; // 11cm
+        logoBoxHeight = 20; // 2cm
+        logoBoxX = x + 4; // 4mm da borda esquerda da etiqueta
+        logoBoxY = y + 3; // 3mm da margem superior
       } else {
-        // Padrão: linha abaixo do nome da empresa
-        textoCnpjY = textoEmpresaY + 3;
+        logoBoxWidth = 60; // 6cm
+        logoBoxHeight = 10; // 1cm
+        logoBoxX = x + 4; // 4mm da borda esquerda da etiqueta
+        logoBoxY = y + 2; // 2mm da margem superior
       }
-      doc.setFontSize(isModeloGrande ? 10 : 6);
-      doc.setFont('helvetica', 'normal');
-      doc.text(
-        `CNPJ: ${dadosEtiqueta.cnpj || ''} IE: ${dadosEtiqueta.inscricaoEstadual || ''}`,
-        textoCnpjX,
-        textoCnpjY,
-        { align: 'left' }
-      );
 
-      // Adicionar cidade/estado na linha abaixo do CNPJ/IE
-      const textoCidadeEstadoX = textoEmpresaX;
-      // Para modelo grande, cidade/estado uma linha abaixo do CNPJ/IE (espaçamento mínimo: +4mm)
-      const textoCidadeEstadoY = isModeloGrande ? textoCnpjY + 4 : textoCnpjY + 3;
-      doc.setFontSize(isModeloGrande ? 12 : 7);
-      doc.setFont('helvetica', 'normal');
-      doc.text(
-        dadosEtiqueta.cidadeEstado || '',
-        textoCidadeEstadoX,
-        textoCidadeEstadoY,
-        { align: 'left' }
-      );
-
-      // Adicionar logomarca como marca d'água com opacidade ajustada
+      // Adicionar logomarca ajustada ao quadrado
       if (logomarca) {
-        const larguraMarcaDagua = largura * 0.8; // Ajustar tamanho da logomarca
-        const alturaMarcaDagua = altura * 0.8;
-        const posXMarcaDagua = x + (largura - larguraMarcaDagua) / 2;
-        const posYMarcaDagua = y + (altura - alturaMarcaDagua) / 2;
-  
-        // Salvar o estado gráfico atual
         doc.saveGraphicsState();
-  
-        // Ajustar a opacidade para a marca d'água
         doc.setGState(new doc.GState({ opacity: intensidadeMarcaDagua }));
-  
-        // Adicionar a imagem da logomarca
-        doc.addImage(logomarca, 'PNG', posXMarcaDagua, posYMarcaDagua, larguraMarcaDagua, alturaMarcaDagua, '', 'NONE');
-  
-        // Restaurar o estado gráfico original
+        doc.addImage(
+          logomarca,
+          'PNG',
+          logoBoxX,
+          logoBoxY,
+          logoBoxWidth,
+          logoBoxHeight,
+          '',
+          'NONE'
+        );
         doc.restoreGraphicsState();
       }
-  
+
+      // Adicionar texto do website (apenas modelo grande: 3mm abaixo e fonte 8)
+      if (isModeloGrande) {
+        const textoSiteX = x + 40; // 4cm = 40mm da borda esquerda
+        const textoSiteY = logoBoxY + logoBoxHeight + 5;
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(12);
+        doc.text(dadosEtiqueta.website || '', textoSiteX, textoSiteY, { align: 'left' });
+      } else {
+        const textoSiteX = x + 20;
+        const textoSiteY = logoBoxY + logoBoxHeight + 2;
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(8);
+        doc.text(dadosEtiqueta.website || '', textoSiteX, textoSiteY, { align: 'left' });
+      }
+
       // Desenhar o contorno da etiqueta com largura da borda aumentada em 100%
-      doc.setLineWidth(0.6); // Largura da borda alterada para 0.6
+      doc.setLineWidth(0.6);
       doc.rect(x, y, largura, altura);
 
-      // --- Corrigir posição do nome do produto e cliente apenas para modelo grande ---
       if (isModeloGrande) {
-        // Nome do produto (duas linhas acima da posição padrão)
-        doc.setFontSize(etiqueta.tamanhoFonteNomeProduto);
+        doc.setFontSize(26); // fonte do produto para 26
         doc.setFont('helvetica', 'bold');
         const nomeProduto = doc.splitTextToSize(etiqueta.produto.nome, largura - 4);
-        doc.text(nomeProduto, x + 2, y + altura - 30);
+        doc.text(nomeProduto, x + 2, y + altura - 37);
 
-        // Cliente: uma linha abaixo da posição anterior (y + altura - 15 + 5 = y + altura - 10)
-        if (incluirCliente && etiqueta.cliente) {
-          doc.setFontSize(13);
-          doc.setFont('helvetica', 'normal');
-          doc.text(`Cliente: ${etiqueta.cliente.nome}`, x + 2, y + altura - 10);
+        // Ordem de entrega (círculo e texto) - modelo grande, 300% do tamanho padrão, reduzido em 25%
+        if (incluirOrdemEntrega && ordemEntregaTexto) {
+          const baseCircleDiameter = 14; // mm (padrão)
+          const circleDiameter = baseCircleDiameter * 3 * 0.75; // 300% do padrão, reduzido em 25%
+          const circleRadius = circleDiameter / 2;
+          // Mantém a posição relativa ao canto superior direito, mas ajusta para o novo tamanho
+          const circleX = x + largura - circleRadius - 3;
+          const circleY = y + circleRadius + 1;
+
+          // Desenhar círculo preto
+          doc.setFillColor(0, 0, 0);
+          doc.circle(circleX, circleY, circleRadius, 'F');
+
+          // Calcular tamanho máximo da fonte para caber no círculo com borda mínima
+          const ordemTexto = String(ordemEntregaTexto);
+          let fontSize = circleDiameter;
+          const minMargin = 2 * 3 * 0.75; // proporcional ao aumento e redução
+          const maxWidth = circleDiameter - minMargin * 2;
+          const maxHeight = circleDiameter - minMargin * 2;
+
+          doc.setFont('helvetica', 'bold');
+          let textWidth = doc.getTextWidth(ordemTexto);
+          let textHeight = fontSize * 0.7;
+          while ((textWidth > maxWidth || textHeight > maxHeight) && fontSize > 1) {
+            fontSize -= 0.5;
+            doc.setFontSize(fontSize);
+            textWidth = doc.getTextWidth(ordemTexto);
+            textHeight = fontSize * 0.7;
+          }
+
+          // Aumentar o tamanho da fonte em 100% (como no padrão, mas já está 3x maior e reduzido em 25%)
+          let fontSizeFinal = fontSize * 2;
+          if (ordemTexto.length > 3) {
+            let tempFontSize = fontSize * 2;
+            doc.setFontSize(tempFontSize);
+            let textWidth = doc.getTextWidth(ordemTexto);
+            const maxWidthText = circleDiameter - 4 * 3 * 0.75;
+            while (textWidth > maxWidthText && tempFontSize > 1) {
+              tempFontSize -= 0.5;
+              doc.setFontSize(tempFontSize);
+              textWidth = doc.getTextWidth(ordemTexto);
+            }
+            fontSizeFinal = tempFontSize;
+          }
+          doc.setTextColor(255, 255, 255);
+          doc.setFontSize(fontSizeFinal);
+          doc.text(
+            ordemTexto,
+            circleX,
+            circleY + fontSize * 0.25 - 4 * 3 * 0.75, // posição proporcional ao aumento e redução
+            { align: 'center', baseline: 'middle' }
+          );
+          doc.setTextColor(0, 0, 0);
         }
-        // Cidade/UF: 5mm acima do rodapé (corrigido para aceitar tanto .uf quanto .estado)
+
+        if (incluirCliente && etiqueta.cliente) {
+          doc.setFontSize(15); // fonte do nome do cliente para 15
+          doc.setFont('helvetica', 'normal');
+          // Move o nome do cliente 0.2cm (2mm) abaixo da posição atual
+          doc.text(`Cliente: ${etiqueta.cliente.nome}`, x + 2, y + altura - 11);
+        }
         if (
           incluirCliente &&
           etiqueta.cliente &&
-          etiqueta.cliente.cidade &&
-          (typeof etiqueta.cliente.uf === 'string' && etiqueta.cliente.uf.trim() !== '' ? etiqueta.cliente.uf : (etiqueta.cliente.estado || ''))
+          etiqueta.cliente.cidade
         ) {
-          doc.setFontSize(10); // <-- tamanho 10 para cidade/UF no modelo grande
+          // Sempre buscar o valor da UF na coluna "estado" do cliente
+          let uf = '';
+          if (
+            etiqueta.cliente.estado !== undefined &&
+            etiqueta.cliente.estado !== null &&
+            String(etiqueta.cliente.estado).trim() !== ''
+          ) {
+            uf = String(etiqueta.cliente.estado).trim();
+          }
+          doc.setFontSize(12); // fonte da cidade - UF para 12
           doc.text(
-            `${etiqueta.cliente.cidade} - ${etiqueta.cliente.uf}`,
+            `${etiqueta.cliente.cidade}${uf ? ' - ' + uf : ''}`,
             x + 2,
             y + altura - 5
           );
         }
-        // Número de série (mantém na mesma linha da cidade/UF, à direita)
         if (incluirNumeroSerie && etiqueta.numeroSerie) {
-          doc.setFontSize(10); // <-- tamanho 10 para número de série no modelo grande
+          doc.setFontSize(12); // fonte do número de série para 12
           doc.text(
             `N° Série: ${etiqueta.numeroSerie}`,
             x + largura - 2,
@@ -706,10 +748,52 @@ export default function GeradorEtiquetas({ db }) {
           );
         }
       } else {
-        doc.setFontSize(etiqueta.tamanhoFonteNomeProduto);
+        doc.setFontSize(12); // fonte do produto para 12
         doc.setFont('helvetica', 'bold');
         const nomeProduto = doc.splitTextToSize(etiqueta.produto.nome, largura - 4);
-        doc.text(nomeProduto, x + 2, y + altura - 20);
+        doc.text(nomeProduto, x + 2, y + altura - 19); // 1mm abaixo do original
+
+        // Círculo preto com ordem de entrega no canto superior direito (3mm da margem direita)
+        if (incluirOrdemEntrega && ordemEntregaTexto) {
+          const circleDiameter = 14; // mm
+          const circleRadius = circleDiameter / 2;
+          const circleX = x + largura - circleRadius - 3; // 3mm da margem direita
+          const circleY = y + circleRadius + 1; // 1mm da margem superior
+
+          // Desenhar círculo preto
+          doc.setFillColor(0, 0, 0);
+          doc.circle(circleX, circleY, circleRadius, 'F');
+
+          // Calcular tamanho máximo da fonte para caber no círculo com borda mínima
+          const ordemTexto = String(ordemEntregaTexto);
+          let fontSize = circleDiameter; // começa com o diâmetro
+          const minMargin = 2; // mm de borda mínima
+          const maxWidth = circleDiameter - minMargin * 2;
+          const maxHeight = circleDiameter - minMargin * 2;
+
+          // Medir largura do texto e ajustar fonte para caber
+          doc.setFont('helvetica', 'bold');
+          let textWidth = doc.getTextWidth(ordemTexto);
+          // Aproximação: altura da fonte em mm é ~0.7*fontSize
+          let textHeight = fontSize * 0.7;
+          while ((textWidth > maxWidth || textHeight > maxHeight) && fontSize > 1) {
+            fontSize -= 0.5;
+            doc.setFontSize(fontSize);
+            textWidth = doc.getTextWidth(ordemTexto);
+            textHeight = fontSize * 0.7;
+          }
+
+          doc.setTextColor(255, 255, 255);
+          // Aumentar o tamanho da fonte em 100%
+          doc.setFontSize(fontSize * 2);
+          doc.text(
+            ordemTexto,
+            circleX,
+            circleY + fontSize * 0.25 - 4, // posição atual
+            { align: 'center', baseline: 'middle' }
+          );
+          doc.setTextColor(0, 0, 0); // reset para preto
+        }
 
         if (incluirCliente && etiqueta.cliente) {
           doc.setFontSize(10);
@@ -719,15 +803,20 @@ export default function GeradorEtiquetas({ db }) {
         if (
           incluirCliente &&
           etiqueta.cliente &&
-          etiqueta.cliente.cidade &&
-          (typeof etiqueta.cliente.uf === 'string' && etiqueta.cliente.uf.trim() !== '' ? etiqueta.cliente.uf : (etiqueta.cliente.estado || ''))
+          etiqueta.cliente.cidade
         ) {
+          // Sempre buscar o valor da UF na coluna "estado" do cliente
+          let uf = '';
+          if (
+            etiqueta.cliente.estado !== undefined &&
+            etiqueta.cliente.estado !== null &&
+            String(etiqueta.cliente.estado).trim() !== ''
+          ) {
+            uf = String(etiqueta.cliente.estado).trim();
+          }
           doc.setFontSize(8);
-          const uf = (typeof etiqueta.cliente.uf === 'string' && etiqueta.cliente.uf.trim() !== '')
-            ? etiqueta.cliente.uf
-            : (etiqueta.cliente.estado || '');
           doc.text(
-            `${etiqueta.cliente.cidade} - ${uf}`,
+            `${etiqueta.cliente.cidade}${uf ? ' - ' + uf : ''}`,
             x + 2,
             y + altura - 5
           );
@@ -759,8 +848,7 @@ export default function GeradorEtiquetas({ db }) {
     } = configuracoes;
 
     const isModeloGrande = largura > 100;
-    // Para modelo grande, margem esquerda 5mm; padrão mantém 4mm
-    const margemEsquerda = isModeloGrande ? 5 : 4;
+    const margemEsquerda = isModeloGrande ? 7.5 : 6; // 0.75cm (7.5mm) para grande, 6mm para padrão
     const margemSuperior = 5;
     const margemEntreColunas = 6;
     const margemEntreLinhas = 3;
@@ -789,136 +877,145 @@ export default function GeradorEtiquetas({ db }) {
       const x = margemEsquerda + coluna * (largura + margemEntreColunas);
       const y = margemSuperior + linha * (altura + margemEntreLinhas);
 
-      // Adicionar campo de ordem de entrega no canto superior direito, se habilitado
-      if (incluirOrdemEntrega) {
-        const campoOrdemX = x + largura - 18; // Posicionar a 4mm da margem direita
-        const campoOrdemY = y + 2; // Respeitar 2mm de margem superior
-        const campoOrdemTamanho = 14; // 1.4cm = 14mm
-
-        // Removida a borda do quadrado
-
-        // Adicionar número de ordem de entrega centralizado no quadrado
-        doc.setFont('helvetica', 'bold'); // Fonte em negrito
-        const fontSize = 26; // Alterar tamanho da fonte para 26
-        doc.setFontSize(fontSize);
-
-        const textoOrdem = String(ordemEntregaTexto || etiqueta.ordemEntrega || '');
-        const textX = campoOrdemX + campoOrdemTamanho / 2; // Centralizar horizontalmente
-        const textY = campoOrdemY + campoOrdemTamanho / 2 + fontSize * 0.35 / 2; // Centralizar verticalmente
-
-        doc.text(textoOrdem, textX, textY, { align: 'center' });
-
-        // Adicionar texto "ORDEM DE ENTREGA" ao lado esquerdo do quadrado
-        doc.setFontSize(6);
-        doc.setFont('helvetica', 'bold');
-        const textoX = campoOrdemX - 12; // Posicionar ao lado esquerdo do quadrado
-        doc.text('ORDEM DE', textoX, campoOrdemY + 7); // Linha superior (ajustada para uma linha abaixo)
-        doc.text('ENTREGA', textoX, campoOrdemY + 11); // Linha inferior (ajustada para uma linha abaixo)
-      }
-
-      // Adicionar texto do website no canto superior direito, uma linha abaixo
-      const textoSiteX = x + largura - 2; // Margem mínima de 2mm do lado direito
-      // Para modelo grande, 1mm abaixo da posição atual
-      const textoSiteY = isModeloGrande ? y + 5 : y + 4;
-      doc.setFont('helvetica', 'normal'); // Fonte normal
-      doc.setFontSize(isModeloGrande ? 10 : 6); // Fonte 10 para modelo grande, 6 para padrão
-      doc.text(dadosEtiqueta.website || '', textoSiteX, textoSiteY, { align: 'right' }); // Alinhar à direita
-
-      // Adicionar texto do nome da empresa no canto superior esquerdo
-      const textoEmpresaX = x + 2; // Respeitar 4mm de margem esquerda - 2mm
-      // Para modelo grande, 3mm abaixo da posição atual (y + 6 + 3 = y + 9), fonte 20; padrão mantém y+6 e fonte 13
-      const textoEmpresaY = isModeloGrande ? y + 9 : y + 6;
-      doc.setFont('helvetica', 'bold'); // Fonte em negrito
-      doc.setFontSize(isModeloGrande ? 20 : 13); // Fonte 20 para modelo grande, 13 para padrão
-      doc.text(dadosEtiqueta.nomeEmpresa || '', textoEmpresaX, textoEmpresaY, { align: 'left' }); // Alinhar à esquerda
-
-      // Adicionar texto "CNPJ: {CNPJ} IE: {IE}" uma linha abaixo do nome da empresa com espaçamento mínimo no modelo grande
-      const textoCnpjX = textoEmpresaX;
-      let textoCnpjY;
+      let logoBoxWidth, logoBoxHeight, logoBoxX, logoBoxY;
       if (isModeloGrande) {
-        // Para modelo grande, uma linha abaixo do nome da empresa (y + 9 + 4 = y + 13)
-        textoCnpjY = textoEmpresaY + 4;
+        logoBoxWidth = 110; // 11cm
+        logoBoxHeight = 20; // 2cm
+        logoBoxX = x + 4; // 4mm da borda esquerda da etiqueta
+        logoBoxY = y + 3; // 3mm da margem superior
       } else {
-        // Padrão: linha abaixo do nome da empresa
-        textoCnpjY = textoEmpresaY + 3;
+        logoBoxWidth = 60; // 6cm
+        logoBoxHeight = 10; // 1cm
+        logoBoxX = x + 4; // 4mm da borda esquerda da etiqueta
+        logoBoxY = y + 2; // 2mm da margem superior
       }
-      doc.setFontSize(isModeloGrande ? 10 : 6);
-      doc.setFont('helvetica', 'normal');
-      doc.text(
-        `CNPJ: ${dadosEtiqueta.cnpj || ''} IE: ${dadosEtiqueta.inscricaoEstadual || ''}`,
-        textoCnpjX,
-        textoCnpjY,
-        { align: 'left' }
-      );
 
-      // Adicionar cidade/estado na linha abaixo do CNPJ/IE
-      const textoCidadeEstadoX = textoEmpresaX;
-      // Para modelo grande, cidade/estado uma linha abaixo do CNPJ/IE (espaçamento mínimo: +4mm)
-      const textoCidadeEstadoY = isModeloGrande ? textoCnpjY + 4 : textoCnpjY + 3;
-      doc.setFontSize(isModeloGrande ? 12 : 7);
-      doc.setFont('helvetica', 'normal');
-      doc.text(
-        dadosEtiqueta.cidadeEstado || '',
-        textoCidadeEstadoX,
-        textoCidadeEstadoY,
-        { align: 'left' }
-      );
-
-      // Adicionar logomarca como marca d'água com opacidade ajustada
+      // Adicionar logomarca ajustada ao quadrado
       if (logomarca) {
-        const larguraMarcaDagua = largura * 0.8; // Ajustar tamanho da logomarca
-        const alturaMarcaDagua = altura * 0.8;
-        const posXMarcaDagua = x + (largura - larguraMarcaDagua) / 2;
-        const posYMarcaDagua = y + (altura - alturaMarcaDagua) / 2;
-
-        // Salvar o estado gráfico atual
         doc.saveGraphicsState();
-
-        // Ajustar a opacidade para a marca d'água
         doc.setGState(new doc.GState({ opacity: intensidadeMarcaDagua }));
-
-        // Adicionar a imagem da logomarca
-        doc.addImage(logomarca, 'PNG', posXMarcaDagua, posYMarcaDagua, larguraMarcaDagua, alturaMarcaDagua, '', 'NONE');
-
-        // Restaurar o estado gráfico original
+        doc.addImage(
+          logomarca,
+          'PNG',
+          logoBoxX,
+          logoBoxY,
+          logoBoxWidth,
+          logoBoxHeight,
+          '',
+          'NONE'
+        );
         doc.restoreGraphicsState();
       }
 
+      // Adicionar texto do website (apenas modelo grande: 3mm abaixo e fonte 8)
+      if (isModeloGrande) {
+        const textoSiteX = x + 40; // 4cm = 40mm da borda esquerda
+        const textoSiteY = logoBoxY + logoBoxHeight + 5;
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(12);
+        doc.text(dadosEtiqueta.website || '', textoSiteX, textoSiteY, { align: 'left' });
+      } else {
+        const textoSiteX = x + 20;
+        const textoSiteY = logoBoxY + logoBoxHeight + 2;
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(8);
+        doc.text(dadosEtiqueta.website || '', textoSiteX, textoSiteY, { align: 'left' });
+      }
+
       // Desenhar o contorno da etiqueta com largura da borda aumentada em 100%
-      doc.setLineWidth(0.6); // Largura da borda alterada para 0.6
+      doc.setLineWidth(0.6);
       doc.rect(x, y, largura, altura);
 
-      // --- Corrigir posição do nome do produto e cliente apenas para modelo grande ---
       if (isModeloGrande) {
-        // Nome do produto (duas linhas acima da posição padrão)
-        doc.setFontSize(etiqueta.tamanhoFonteNomeProduto);
+        doc.setFontSize(26); // fonte do produto para 26
         doc.setFont('helvetica', 'bold');
         const nomeProduto = doc.splitTextToSize(etiqueta.produto.nome, largura - 4);
-        doc.text(nomeProduto, x + 2, y + altura - 30);
+        doc.text(nomeProduto, x + 2, y + altura - 37);
 
-        // Cliente: uma linha abaixo da posição anterior (y + altura - 15 + 5 = y + altura - 10)
-        if (incluirCliente && etiqueta.cliente) {
-          doc.setFontSize(13);
-          doc.setFont('helvetica', 'normal');
-          doc.text(`Cliente: ${etiqueta.cliente.nome}`, x + 2, y + altura - 10);
+        // Ordem de entrega (círculo e texto) - modelo grande, 300% do tamanho padrão, reduzido em 25%
+        if (incluirOrdemEntrega && ordemEntregaTexto) {
+          const baseCircleDiameter = 14; // mm (padrão)
+          const circleDiameter = baseCircleDiameter * 3 * 0.75; // 300% do padrão, reduzido em 25%
+          const circleRadius = circleDiameter / 2;
+          // Mantém a posição relativa ao canto superior direito, mas ajusta para o novo tamanho
+          const circleX = x + largura - circleRadius - 3;
+          const circleY = y + circleRadius + 1;
+
+          // Desenhar círculo preto
+          doc.setFillColor(0, 0, 0);
+          doc.circle(circleX, circleY, circleRadius, 'F');
+
+          // Calcular tamanho máximo da fonte para caber no círculo com borda mínima
+          const ordemTexto = String(ordemEntregaTexto);
+          let fontSize = circleDiameter;
+          const minMargin = 2 * 3 * 0.75; // proporcional ao aumento e redução
+          const maxWidth = circleDiameter - minMargin * 2;
+          const maxHeight = circleDiameter - minMargin * 2;
+
+          doc.setFont('helvetica', 'bold');
+          let textWidth = doc.getTextWidth(ordemTexto);
+          let textHeight = fontSize * 0.7;
+          while ((textWidth > maxWidth || textHeight > maxHeight) && fontSize > 1) {
+            fontSize -= 0.5;
+            doc.setFontSize(fontSize);
+            textWidth = doc.getTextWidth(ordemTexto);
+            textHeight = fontSize * 0.7;
+          }
+
+          // Aumentar o tamanho da fonte em 100% (como no padrão, mas já está 3x maior e reduzido em 25%)
+          let fontSizeFinal = fontSize * 2;
+          if (ordemTexto.length > 3) {
+            let tempFontSize = fontSize * 2;
+            doc.setFontSize(tempFontSize);
+            let textWidth = doc.getTextWidth(ordemTexto);
+            const maxWidthText = circleDiameter - 4 * 3 * 0.75;
+            while (textWidth > maxWidthText && tempFontSize > 1) {
+              tempFontSize -= 0.5;
+              doc.setFontSize(tempFontSize);
+              textWidth = doc.getTextWidth(ordemTexto);
+            }
+            fontSizeFinal = tempFontSize;
+          }
+          doc.setTextColor(255, 255, 255);
+          doc.setFontSize(fontSizeFinal);
+          doc.text(
+            ordemTexto,
+            circleX,
+            circleY + fontSize * 0.25 - 4 * 3 * 0.75, // posição proporcional ao aumento e redução
+            { align: 'center', baseline: 'middle' }
+          );
+          doc.setTextColor(0, 0, 0);
         }
-        // Cidade/UF: 5mm acima do rodapé (corrigido para aceitar tanto .uf quanto .estado)
+
+        if (incluirCliente && etiqueta.cliente) {
+          doc.setFontSize(15); // fonte do nome do cliente para 15
+          doc.setFont('helvetica', 'normal');
+          // Move o nome do cliente 0.2cm (2mm) abaixo da posição atual
+          doc.text(`Cliente: ${etiqueta.cliente.nome}`, x + 2, y + altura - 11);
+        }
         if (
           incluirCliente &&
           etiqueta.cliente &&
-          etiqueta.cliente.cidade &&
-          (typeof etiqueta.cliente.uf === 'string' && etiqueta.cliente.uf.trim() !== '' ? etiqueta.cliente.uf : (etiqueta.cliente.estado || ''))
+          etiqueta.cliente.cidade
         ) {
-          doc.setFontSize(10); // <-- tamanho 10 para cidade/UF no modelo grande
+          // Sempre buscar o valor da UF na coluna "estado" do cliente
+          let uf = '';
+          if (
+            etiqueta.cliente.estado !== undefined &&
+            etiqueta.cliente.estado !== null &&
+            String(etiqueta.cliente.estado).trim() !== ''
+          ) {
+            uf = String(etiqueta.cliente.estado).trim();
+          }
+          doc.setFontSize(12); // fonte da cidade - UF para 12
           doc.text(
-            `${etiqueta.cliente.cidade} - ${etiqueta.cliente.uf}`,
+            `${etiqueta.cliente.cidade}${uf ? ' - ' + uf : ''}`,
             x + 2,
             y + altura - 5
           );
         }
-        // Número de série (mantém na mesma linha da cidade/UF, à direita)
         if (incluirNumeroSerie && etiqueta.numeroSerie) {
-          doc.setFontSize(10); // <-- tamanho 10 para número de série no modelo grande
+          doc.setFontSize(12); // fonte do número de série para 12
           doc.text(
             `N° Série: ${etiqueta.numeroSerie}`,
             x + largura - 2,
@@ -927,10 +1024,52 @@ export default function GeradorEtiquetas({ db }) {
           );
         }
       } else {
-        doc.setFontSize(etiqueta.tamanhoFonteNomeProduto);
+        doc.setFontSize(12); // fonte do produto para 12
         doc.setFont('helvetica', 'bold');
         const nomeProduto = doc.splitTextToSize(etiqueta.produto.nome, largura - 4);
-        doc.text(nomeProduto, x + 2, y + altura - 20);
+        doc.text(nomeProduto, x + 2, y + altura - 19); // 1mm abaixo do original
+
+        // Círculo preto com ordem de entrega no canto superior direito (3mm da margem direita)
+        if (incluirOrdemEntrega && ordemEntregaTexto) {
+          const circleDiameter = 14; // mm
+          const circleRadius = circleDiameter / 2;
+          const circleX = x + largura - circleRadius - 3; // 3mm da margem direita
+          const circleY = y + circleRadius + 1; // 1mm da margem superior
+
+          // Desenhar círculo preto
+          doc.setFillColor(0, 0, 0);
+          doc.circle(circleX, circleY, circleRadius, 'F');
+
+          // Calcular tamanho máximo da fonte para caber no círculo com borda mínima
+          const ordemTexto = String(ordemEntregaTexto);
+          let fontSize = circleDiameter; // começa com o diâmetro
+          const minMargin = 2; // mm de borda mínima
+          const maxWidth = circleDiameter - minMargin * 2;
+          const maxHeight = circleDiameter - minMargin * 2;
+
+          // Medir largura do texto e ajustar fonte para caber
+          doc.setFont('helvetica', 'bold');
+          let textWidth = doc.getTextWidth(ordemTexto);
+          // Aproximação: altura da fonte em mm é ~0.7*fontSize
+          let textHeight = fontSize * 0.7;
+          while ((textWidth > maxWidth || textHeight > maxHeight) && fontSize > 1) {
+            fontSize -= 0.5;
+            doc.setFontSize(fontSize);
+            textWidth = doc.getTextWidth(ordemTexto);
+            textHeight = fontSize * 0.7;
+          }
+
+          doc.setTextColor(255, 255, 255);
+          // Aumentar o tamanho da fonte em 100%
+          doc.setFontSize(fontSize * 2);
+          doc.text(
+            ordemTexto,
+            circleX,
+            circleY + fontSize * 0.25 - 4, // posição atual
+            { align: 'center', baseline: 'middle' }
+          );
+          doc.setTextColor(0, 0, 0); // reset para preto
+        }
 
         if (incluirCliente && etiqueta.cliente) {
           doc.setFontSize(10);
@@ -940,15 +1079,20 @@ export default function GeradorEtiquetas({ db }) {
         if (
           incluirCliente &&
           etiqueta.cliente &&
-          etiqueta.cliente.cidade &&
-          (typeof etiqueta.cliente.uf === 'string' && etiqueta.cliente.uf.trim() !== '' ? etiqueta.cliente.uf : (etiqueta.cliente.estado || ''))
+          etiqueta.cliente.cidade
         ) {
+          // Sempre buscar o valor da UF na coluna "estado" do cliente
+          let uf = '';
+          if (
+            etiqueta.cliente.estado !== undefined &&
+            etiqueta.cliente.estado !== null &&
+            String(etiqueta.cliente.estado).trim() !== ''
+          ) {
+            uf = String(etiqueta.cliente.estado).trim();
+          }
           doc.setFontSize(8);
-          const uf = (typeof etiqueta.cliente.uf === 'string' && etiqueta.cliente.uf.trim() !== '')
-            ? etiqueta.cliente.uf
-            : (etiqueta.cliente.estado || '');
           doc.text(
-            `${etiqueta.cliente.cidade} - ${uf}`,
+            `${etiqueta.cliente.cidade}${uf ? ' - ' + uf : ''}`,
             x + 2,
             y + altura - 5
           );
@@ -965,7 +1109,6 @@ export default function GeradorEtiquetas({ db }) {
       }
     });
 
-    // Abrir o PDF no navegador para impressão
     window.open(doc.output('bloburl'), '_blank');
   };
 
